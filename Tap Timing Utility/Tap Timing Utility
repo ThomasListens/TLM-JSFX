@@ -1,0 +1,348 @@
+desc: Tap Timing Utility with Project Tempo
+author: Claude & Thomas
+version: 1.4
+provides: timing_utility_enhanced
+
+slider1:120<60,200,1>Current BPM
+slider2:0<0,1,1{Off,On}>Audio Click
+slider3:1<0,1,1{Off,On}>Show History
+slider4:0<0,1,1{Off,On}>Show Project Info
+
+@init
+click_count = 0;
+start_sample = 0;
+end_sample = 0;
+sample_counter = 0;
+timing_ms = 0;
+timing_samples = 0;
+timing_beats = 0;
+timing_hz = 0;
+current_bpm = 120;
+project_bpm = 120;
+history_count = 0;
+max_history = 5;
+previous_timing_ms = 0;
+previous_timing_beats = 0;
+
+// Project tempo tracking with memory
+last_tempo = 0;
+remembered_tempo = 120; // Fallback tempo when project tempo is 0
+last_play_position = 0;
+last_beat_position = 0;
+last_ts_num = 4;
+last_ts_denom = 4;
+last_play_state = 0;
+tempo_source_text = "";
+
+// BPM calculation variables (make global)
+bmp_to_use = 120;
+beat_duration_ms = 500;
+
+// Audio click settings
+click_freq = 1000;
+click_duration = 0.005; // 5ms
+click_amp = 0.1;
+click_phase = 0;
+click_active = 0;
+click_samples_left = 0;
+
+// Mouse state
+mouse_was_down = 0;
+
+@slider
+current_bpm = slider1;
+audio_click_enabled = slider2;
+show_history = slider3;
+show_project_info = slider4;
+
+@block
+// Update BPM from slider
+current_bpm = slider1;
+
+// Enhanced project tempo tracking with memory
+tempo > 0 ? (
+  // Valid tempo from project - remember it and update slider
+  last_tempo = tempo;
+  remembered_tempo = tempo;
+  project_bpm = tempo;
+  slider1 = tempo; // Update slider to match project tempo
+  tempo_source_text = "project (live)";
+) : (
+  // Project tempo is 0 (paused/stopped) - use remembered tempo
+  last_tempo = 0;
+  project_bpm = remembered_tempo;
+  // Keep slider at remembered tempo when paused
+  remembered_tempo > 0 ? slider1 = remembered_tempo;
+  tempo_source_text = "project (memory)";
+);
+
+last_play_position = play_position;
+last_beat_position = beat_position;
+last_ts_num = ts_num;
+last_ts_denom = ts_denom;
+last_play_state = play_state;
+
+@sample
+// Increment sample counter
+sample_counter += 1;
+
+// Handle audio click generation
+click_out = 0;
+click_active && audio_click_enabled ? (
+  click_out = sin(click_phase) * click_amp * (click_samples_left / (click_duration * srate));
+  click_phase += 2 * $pi * click_freq / srate;
+  click_samples_left -= 1;
+  
+  click_samples_left <= 0 ? (
+    click_active = 0;
+    click_phase = 0;
+  );
+);
+
+// Add click to output
+spl0 += click_out;
+spl1 += click_out;
+
+@gfx 450 350
+// Colors - using hex values directly
+gfx_r = 0.06; gfx_g = 0.06; gfx_b = 0.06; // bg_color
+gfx_rect(0, 0, gfx_w, gfx_h);
+
+// Handle mouse clicks
+mouse_down = mouse_cap & 1;
+mouse_clicked = mouse_down && !mouse_was_down;
+mouse_was_down = mouse_down;
+
+mouse_clicked ? (
+  // Generate audio click
+  audio_click_enabled ? (
+    click_active = 1;
+    click_samples_left = click_duration * srate;
+    click_phase = 0;
+  );
+  
+  click_count += 1;
+  
+  click_count == 1 ? (
+    // First click - start timing
+    start_sample = sample_counter;
+    timing_ms = 0;
+    timing_samples = 0;
+    timing_beats = 0;
+    timing_hz = 0;
+  ) : click_count >= 2 ? (
+    // Second click - calculate timing
+    end_sample = sample_counter;
+    timing_samples = end_sample - start_sample;
+    timing_ms = timing_samples * 1000 / srate;
+    
+    // Calculate frequency (Hz) - this is the key addition!
+    timing_hz = timing_ms > 0 ? 1000.0 / timing_ms : 0;
+    
+    // Store previous timing before updating
+    previous_timing_ms = timing_ms;
+    
+    // Calculate beat relationship using best available BPM
+    // Priority: remembered project tempo > manual slider
+    bmp_to_use = remembered_tempo > 0 ? remembered_tempo : current_bpm;
+    // FIXED: Ensure we never use 0 BPM
+    bmp_to_use <= 0 ? bmp_to_use = current_bpm;
+    current_bpm <= 0 ? bmp_to_use = 120; // Ultimate fallback
+    
+    beat_duration_ms = 60000.0 / bmp_to_use;
+    timing_beats = timing_ms / beat_duration_ms;
+    previous_timing_beats = timing_beats;
+    
+    // Store in history
+    history_count < max_history ? (
+      history_count += 1;
+    );
+    
+    // Reset for next measurement
+    click_count = 0;
+  );
+);
+
+// Reset on right click
+mouse_cap & 2 ? (
+  click_count = 0;
+  timing_ms = 0;
+  timing_samples = 0;
+  timing_beats = 0;
+  timing_hz = 0;
+  previous_timing_ms = 0;
+  previous_timing_beats = 0;
+  history_count = 0;
+);
+
+// Project tempo display (if enabled)
+current_y = 20;
+show_project_info ? (
+  gfx_setfont(1, "Consolas", 12);
+  gfx_r = 0.29; gfx_g = 0.4; gfx_b = 0.25; // accent_color
+  gfx_x = 20; gfx_y = current_y;
+  
+  // Show current project tempo status
+  last_tempo > 0 ? (
+    gfx_printf("PROJECT TEMPO: %.2f BPM (live)", last_tempo);
+  ) : remembered_tempo > 0 ? (
+    gfx_r = 0.7; gfx_g = 0.5; gfx_b = 0.2; // warning color for remembered tempo
+    gfx_printf("PROJECT TEMPO: %.2f BPM (remembered)", remembered_tempo);
+  ) : (
+    gfx_r = 0.4; gfx_g = 0.4; gfx_b = 0.4; // dim_color
+    gfx_printf("PROJECT TEMPO: Not available");
+  );
+  
+  // Time signature
+  gfx_x = 20; gfx_y = current_y + 15;
+  gfx_r = 0.4; gfx_g = 0.4; gfx_b = 0.4; // dim_color
+  gfx_printf("Time Sig: %.0f/%.0f", last_ts_num, last_ts_denom);
+  
+  // Playback position
+  gfx_x = 20; gfx_y = current_y + 30;
+  minutes = floor(last_play_position / 60);
+  seconds = last_play_position - (minutes * 60);
+  gfx_printf("Position: %.0f:%.3f (%.3f beats)", minutes, seconds, last_beat_position);
+  
+  // Play state
+  gfx_x = 20; gfx_y = current_y + 45;
+  state_text = "Unknown";
+  last_play_state == 0 ? state_text = "Stopped";
+  last_play_state == 1 ? state_text = "Playing";
+  last_play_state == 2 ? state_text = "Paused";
+  last_play_state == 5 ? state_text = "Recording";
+  last_play_state == 6 ? state_text = "Record Paused";
+  gfx_printf("Status: %s", state_text);
+  
+  current_y += 75;
+  
+  // Separator line
+  gfx_r = 0.16; gfx_g = 0.25; gfx_b = 0.13; // highlight_color
+  gfx_line(20, current_y - 5, 300, current_y - 5);
+);
+
+// Set font
+gfx_setfont(1, "Consolas", 14);
+
+// Status indicator
+status_y = current_y + 10;
+click_count == 0 ? (
+  gfx_r = 0.4; gfx_g = 0.4; gfx_b = 0.4; // dim_color
+  gfx_x = 20; gfx_y = status_y;
+  gfx_printf("● READY - Click to start timing");
+) : click_count == 1 ? (
+  gfx_r = 0.29; gfx_g = 0.4; gfx_b = 0.25; // accent_color
+  gfx_x = 20; gfx_y = status_y;
+  gfx_printf("● TIMING - Click again to measure");
+);
+
+// Results display
+timing_ms > 0 ? (
+  result_y = status_y + 40;
+  
+  // Recalculate BPM and beats for display with proper fallbacks
+  bmp_to_use = remembered_tempo > 0 ? remembered_tempo : current_bpm;
+  bmp_to_use <= 0 ? bmp_to_use = slider1; // Try slider value
+  bmp_to_use <= 0 ? bmp_to_use = 120; // Ultimate fallback
+  
+  beat_duration_ms = 60000.0 / bmp_to_use;
+  timing_beats = timing_ms / beat_duration_ms;
+  
+  // Main timing display
+  gfx_setfont(1, "Consolas", 18);
+  gfx_r = 0.94; gfx_g = 0.94; gfx_b = 0.94; // text_color
+  
+  // Milliseconds and Hz (priority 1)
+  gfx_x = 20; gfx_y = result_y;
+  gfx_printf("%.2f ms", timing_ms);
+  
+  // Hz display - prominent for tremolo use!
+  gfx_setfont(1, "Consolas", 16);
+  gfx_r = 0.8; gfx_g = 0.6; gfx_b = 0.2; // warm color for Hz
+  gfx_x = 200; gfx_y = result_y;
+  timing_hz >= 10 ? (
+    gfx_printf("%.1f Hz", timing_hz);
+  ) : timing_hz >= 1 ? (
+    gfx_printf("%.2f Hz", timing_hz);
+  ) : timing_hz > 0 ? (
+    gfx_printf("%.3f Hz", timing_hz);
+  );
+  
+  // BPM relation (priority 2)  
+  gfx_setfont(1, "Consolas", 14);
+  gfx_r = 0.29; gfx_g = 0.4; gfx_b = 0.25; // accent_color
+  gfx_x = 20; gfx_y = result_y + 35;
+  
+  // Use best available tempo source for display
+  bpm_display = bmp_to_use;
+  
+  // Show source of tempo
+  last_tempo > 0 ? (
+    tempo_source = "(project live)";
+    gfx_r = 0.29; gfx_g = 0.4; gfx_b = 0.25; // accent_color
+  ) : remembered_tempo > 0 ? (
+    tempo_source = "(project memory)";
+    gfx_r = 0.7; gfx_g = 0.5; gfx_b = 0.2; // warning color
+  ) : (
+    tempo_source = "(manual)";
+    gfx_r = 0.4; gfx_g = 0.4; gfx_b = 0.4; // dim_color
+  );
+  
+  timing_beats >= 1.0 ? (
+    gfx_printf("%.3f beats @ %.1f BPM %s", timing_beats, bmp_display, tempo_source);
+  ) : timing_beats >= 0.5 ? (
+    gfx_printf("%.3f beat @ %.1f BPM %s", timing_beats, bmp_display, tempo_source);
+  ) : timing_beats > 0 ? (
+    fraction = 1.0 / timing_beats;
+    gfx_printf("1/%.1f beat @ %.1f BPM %s", fraction, bmp_display, tempo_source);
+  ) : (
+    gfx_printf("Invalid timing @ %.1f BPM %s", bmp_display, tempo_source);
+  );
+  
+  // Samples (priority 3)
+  gfx_setfont(1, "Consolas", 14);
+  gfx_r = 0.4; gfx_g = 0.4; gfx_b = 0.4; // dim_color
+  gfx_x = 20; gfx_y = result_y + 80;
+  gfx_printf("%.0f samples @ %.0f Hz", timing_samples, srate);
+  
+  // Previous click comparison
+  previous_timing_ms > 0 ? (
+    gfx_setfont(1, "Consolas", 12);
+    gfx_r = 0.29; gfx_g = 0.4; gfx_b = 0.25; // accent_color
+    gfx_x = 20; gfx_y = result_y + 100;
+    difference = timing_ms - previous_timing_ms;
+    difference >= 0 ? (
+      gfx_printf("Previous: %.2f ms (+%.2f)", previous_timing_ms, difference);
+    ) : (
+      gfx_printf("Previous: %.2f ms (%.2f)", previous_timing_ms, difference);
+    );
+  );
+  
+  // Subtle accent line
+  gfx_r = 0.16; gfx_g = 0.25; gfx_b = 0.13; // highlight_color
+  gfx_line(20, result_y + 25, 320, result_y + 25);
+);
+
+// History display (if enabled)
+show_history && history_count > 0 ? (
+  hist_y = gfx_h - 100;
+  gfx_setfont(1, "Consolas", 11);
+  gfx_r = 0.4; gfx_g = 0.4; gfx_b = 0.4; // dim_color
+  gfx_x = 20; gfx_y = hist_y;
+  gfx_printf("RECENT:");
+  
+  // This is simplified - real implementation would show actual history
+  gfx_x = 20; gfx_y = hist_y + 20;
+  gfx_printf("Previous: %.2f ms (%.2f Hz)", timing_ms, timing_hz);
+);
+
+// Instructions
+gfx_setfont(1, "Consolas", 10);
+gfx_r = 0.4; gfx_g = 0.4; gfx_b = 0.4; // dim_color
+gfx_x = 20; gfx_y = gfx_h - 40;
+gfx_printf("Left click: Start/Stop • Right click: Reset");
+
+// Subtle corner accent
+gfx_r = 0.16; gfx_g = 0.25; gfx_b = 0.13; // highlight_color
+gfx_rect(0, 0, 3, 20);
+gfx_rect(0, 0, 20, 3);
