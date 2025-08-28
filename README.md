@@ -1,6 +1,6 @@
 # TLM-JSFX
 
-A collection of JSFX plugins for REAPER.
+A collection of JSFX plugins for REAPER. I'm just getting started but am commited long term to improving these tools and creating new fx in my pursuit to make more music. 
 
 ## SEED_DELAY
 
@@ -22,7 +22,7 @@ A multi-tap delay plugin featuring creative, musical, and organically-inspired a
 - **Chromatic** - Delays based on chromatic scale intervals
 - **Harmonic** - Musically-consonant delays following harmonic series
 - **Fibonacci** - Nature-inspired timing using the golden ratio
-- **L-System** - Fractal-based patterns for complex rhythms
+- **L-System** - Fractal-based patterns for complex rhythms(used to model plant growth)
 
 ### Controls
 
@@ -37,7 +37,7 @@ A multi-tap delay plugin featuring creative, musical, and organically-inspired a
 
 ## Tap Timing Utility
 
-A precision timing measurement plugin for REAPER that helps you set delays and time-based effects.
+A timing measurement plugin for REAPER that helps you set delays and time-based effects "by hand" using your mouse or keyboard
 
 ### Features
 
