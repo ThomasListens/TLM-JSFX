@@ -9,6 +9,9 @@
     <reapack name="Seed Delay" type="effect" desc="Multi-tap delay with creative algorithms">
       <version name="1.0" author="Thomas Listens">
         <source main="effect">SeedDelay.jsfx</source>
+<<<<<<< HEAD
+>>>>>>> 9b9109ef9987fdb4ad53783339c39625a26041c9
+=======
 >>>>>>> 9b9109ef9987fdb4ad53783339c39625a26041c9
       </version>
     </reapack>
@@ -22,6 +25,9 @@
     <reapack name="Tap Timing Utility" type="effect" desc="Timing measurement tool">
       <version name="1.0" author="Thomas Listens">
         <source main="effect">TapTimingUtility.jsfx</source>
+<<<<<<< HEAD
+>>>>>>> 9b9109ef9987fdb4ad53783339c39625a26041c9
+=======
 >>>>>>> 9b9109ef9987fdb4ad53783339c39625a26041c9
       </version>
     </reapack>
