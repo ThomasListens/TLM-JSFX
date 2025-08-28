@@ -1,3 +1,11 @@
+**# TLM-JSFX**
+
+
+
+**A collection of JSFX plugins for REAPER.**
+
+
+
 **## SEED\_DELAY**
 
 
@@ -7,6 +15,8 @@
 
 
 **### Features**
+
+
 
 **- 12-tap delay matrix with individual control over each tap**
 
@@ -19,6 +29,8 @@
 
 
 **### Algorithms**
+
+
 
 **- \*\*Seed Random\*\* - Generates unpredictable, organic delay patterns**
 
@@ -70,6 +82,8 @@
 
 **### Features**
 
+
+
 **- Measures intervals between clicks with millisecond accuracy**
 
 **- Real-time conversion to Hz, ms, and samples at current sample rate**
@@ -84,6 +98,8 @@
 
 **### Use Cases**
 
+
+
 **- Setting delay times by tapping along with music**
 
 **- Finding the tempo of audio material**
@@ -96,9 +112,53 @@
 
 **### Usage**
 
+
+
 **1. Click the main button to mark timing points**
 
 **2. View instant conversion to useful time formats**
 
 **3. Use measurements to dial in perfect delay times**
+
+
+
+**## Installation**
+
+
+
+**### Via ReaPack**
+
+
+
+**1. In REAPER: Extensions → ReaPack → Manage repositories**
+
+**2. Add this repository URL: `https://github.com/ThomasListens/TLM-JSFX/raw/main/index.xml`**
+
+**3. Synchronize packages**
+
+**4. Find "TLM JSFX" in the package browser**
+
+
+
+**### Manual Installation**
+
+
+
+**Copy the `.jsfx` files to your REAPER Effects folder.**
+
+
+
+**## License**
+
+
+
+**These plugins are provided as-is for creative use.**
+
+
+
+**## Credits**
+
+
+
+**Created by Thomas Meier with AI assistance from Claude.**
 
