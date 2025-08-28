@@ -1,16 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
 <index version="1" name="TLM JSFX">
   <category name="Effects">
+<<<<<<< HEAD
+    <reapack name="Seed Delay" type="effect">
+      <version name="1.0">
+        <source>https://raw.githubusercontent.com/ThomasListens/TLM-JSFX/main/SeedDelay.jsfx</source>
+=======
     <reapack name="Seed Delay" type="effect" desc="Multi-tap delay with creative algorithms">
       <version name="1.0" author="Thomas Listens">
-        <source main="effect">Seed Delay.jsfx</source>
+        <source main="effect">SeedDelay.jsfx</source>
+>>>>>>> 9b9109ef9987fdb4ad53783339c39625a26041c9
       </version>
     </reapack>
   </category>
   <category name="Utility">
+<<<<<<< HEAD
+    <reapack name="Tap Timing Utility" type="effect">
+      <version name="1.0">
+        <source>https://raw.githubusercontent.com/ThomasListens/TLM-JSFX/main/TapTimingUtility.jsfx</source>
+=======
     <reapack name="Tap Timing Utility" type="effect" desc="Timing measurement tool">
       <version name="1.0" author="Thomas Listens">
-        <source main="effect">Tap Timing Utility.jsfx</source>
+        <source main="effect">TapTimingUtility.jsfx</source>
+>>>>>>> 9b9109ef9987fdb4ad53783339c39625a26041c9
       </version>
     </reapack>
   </category>
