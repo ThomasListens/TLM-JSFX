@@ -66,16 +66,23 @@ A timing measurement plugin for REAPER that helps you set delays and time-based 
 
 ## Installation
 
-### Via ReaPack
-
-1. In REAPER: Extensions → ReaPack → Manage repositories
-2. Add this repository URL: `https://github.com/ThomasListens/TLM-JSFX/raw/main/index.xml`
-3. Synchronize packages
-4. Find "TLM JSFX" in the package browser
+### Via ReaPack (Recommended)
+1. Install [ReaPack](https://reapack.com/) if you haven't already
+2. In REAPER: Extensions → ReaPack → Manage repositories
+3. Click "Import repositories..."
+4. Add this repository URL: `https://raw.githubusercontent.com/ThomasListens/TLM-JSFX/main/index.xml`
+5. Click OK, then close the Manage repositories window
+6. Extensions → ReaPack → Synchronize packages
+7. Extensions → ReaPack → Browse packages
+8. Search for "TLM-JSFX" and install the plugins you want
 
 ### Manual Installation
-
-Copy the `.jsfx` files to your REAPER Effects folder.
+1. Download the .jsfx files from this repository
+2. Place them in your REAPER Effects folder:
+   - Windows: `%APPDATA%\REAPER\Effects`
+   - macOS: `~/Library/Application Support/REAPER/Effects`
+   - Linux: `~/.config/REAPER/Effects`
+3. Restart REAPER or scan for new plugins
 
 ## License
 
