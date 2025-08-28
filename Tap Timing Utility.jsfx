@@ -1,5 +1,5 @@
 desc: Tap Timing Utility with MIDI Input
-author: Claude & Thomas
+author: Thomas & Claude
 version: 2.1
 provides: timing_utility_midi
 

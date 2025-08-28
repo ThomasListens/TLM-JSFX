@@ -1,5 +1,5 @@
 desc:Seed Delay
-author:Claude & Thomas
+author:Thomas & Claude
 version: 7.0
 
 slider1:1<1,12,1>-Delay Choice (Legacy)

@@ -1,164 +1,86 @@
-**# TLM-JSFX**
+# TLM-JSFX
 
+A collection of JSFX plugins for REAPER. I'm just getting started but am commited long term to improving these tools and creating new fx in my pursuit to make more music. 
 
+## SEED_DELAY
 
-**A collection of JSFX plugins for REAPER.**
+A multi-tap delay plugin featuring creative, musical, and organically-inspired algorithms to produce 12 unique delay timings.
 
+![Seed Delay Interface](https://i.imgur.com/kbfxQ4Y.png)
 
+### Features
 
-**## SEED\_DELAY**
+- 12-tap delay matrix with individual control over each tap
+- 8 unique timing algorithms inspired by nature, music theory, and mathematics
+- Per-tap volume and pan controls with visual envelope editing
+- Intuitive grid-based interface
 
+### Algorithms
 
+- **Seed Random** - Generates unpredictable, organic delay patterns
+- **Quantum Shuffle** - Timing variations based on quantum probability concepts
+- **Perlin Noise** - Smooth, natural variations using noise algorithms
+- **Spiral Wave** - Creates spiraling, evolving delay patterns
+- **Chromatic** - Delays based on chromatic scale intervals
+- **Harmonic** - Musically-consonant delays following harmonic series
+- **Fibonacci** - Nature-inspired timing using the golden ratio
+- **L-System** - Fractal-based patterns for complex rhythms(used to model plant growth)
 
-**A multi-tap delay plugin featuring creative, musical, and organically-inspired algorithms to produce 12 unique delay timings.**
+### Controls
 
+#### Grid Interface
+- **Click** any square to enable/disable individual taps
+- **[VOL & PAN]** Click to set volume/pan for specific tap
+- **[VOL & PAN]** Shift-click to enable/disable modulation
+- **[VOL & PAN]** Control-click to reset to default
+- **[VOL & PAN]** Click and drag through row to draw envelopes
 
+---
 
-**### Features**
+## Tap Timing Utility
 
+A timing measurement plugin for REAPER that helps you set delays and time-based effects "by hand" using your mouse or keyboard
 
+![Tap Timing Utility Interface](https://i.imgur.com/xSkC0bt.png)
 
-**- 12-tap delay matrix with individual control over each tap**
+### Features
 
-**- 8 unique timing algorithms inspired by nature, music theory, and mathematics**
+- Measures intervals between clicks with millisecond accuracy
+- Real-time conversion to Hz, ms, and samples at current sample rate
+- Tempo-aware beat division calculations
+- Audio click feedback for rhythmic accuracy
+- History tracking of recent measurements
 
-**- Per-tap volume and pan controls with visual envelope editing**
+### Use Cases
 
-**- Intuitive grid-based interface**
+- Setting delay times by tapping along with music
+- Finding the tempo of audio material
+- Calculating LFO rates and modulation speeds
+- Measuring rhythmic intervals for precise timing
 
+### Usage
 
+1. Click the main button to mark timing points
+2. View instant conversion to useful time formats
+3. Use measurements to dial in perfect delay times
 
-**### Algorithms**
+## Installation
 
+### Via ReaPack
 
+1. In REAPER: Extensions → ReaPack → Manage repositories
+2. Add this repository URL: `https://github.com/ThomasListens/TLM-JSFX/raw/main/index.xml`
+3. Synchronize packages
+4. Find "TLM JSFX" in the package browser
 
-**- \*\*Seed Random\*\* - Generates unpredictable, organic delay patterns**
+### Manual Installation
 
-**- \*\*Quantum Shuffle\*\* - Timing variations based on quantum probability concepts**
+Copy the `.jsfx` files to your REAPER Effects folder.
 
-**- \*\*Perlin Noise\*\* - Smooth, natural variations using noise algorithms**
+## License
 
-**- \*\*Spiral Wave\*\* - Creates spiraling, evolving delay patterns**
+These plugins are provided as-is for creative use.
 
-**- \*\*Chromatic\*\* - Delays based on chromatic scale intervals**
+## Credits
 
-**- \*\*Harmonic\*\* - Musically-consonant delays following harmonic series**
-
-**- \*\*Fibonacci\*\* - Nature-inspired timing using the golden ratio**
-
-**- \*\*L-System\*\* - Fractal-based patterns for complex rhythms**
-
-
-
-**### Controls**
-
-
-
-**#### Grid Interface**
-
-**- \*\*Click\*\* any square to enable/disable individual taps**
-
-**- \*\*\[VOL \& PAN]\*\* Click to set volume/pan for specific tap**
-
-**- \*\*\[VOL \& PAN]\*\* Shift-click to enable/disable modulation**
-
-**- \*\*\[VOL \& PAN]\*\* Control-click to reset to default**
-
-**- \*\*\[VOL \& PAN]\*\* Click and drag through row to draw envelopes**
-
-
-
-**---**
-
-
-
-**## Tap Timing Utility**
-
-
-
-**A precision timing measurement plugin for REAPER that helps you set delays and time-based effects.**
-
-
-
-**### Features**
-
-
-
-**- Measures intervals between clicks with millisecond accuracy**
-
-**- Real-time conversion to Hz, ms, and samples at current sample rate**
-
-**- Tempo-aware beat division calculations**
-
-**- Audio click feedback for rhythmic accuracy**
-
-**- History tracking of recent measurements**
-
-
-
-**### Use Cases**
-
-
-
-**- Setting delay times by tapping along with music**
-
-**- Finding the tempo of audio material**
-
-**- Calculating LFO rates and modulation speeds**
-
-**- Measuring rhythmic intervals for precise timing**
-
-
-
-**### Usage**
-
-
-
-**1. Click the main button to mark timing points**
-
-**2. View instant conversion to useful time formats**
-
-**3. Use measurements to dial in perfect delay times**
-
-
-
-**## Installation**
-
-
-
-**### Via ReaPack**
-
-
-
-**1. In REAPER: Extensions → ReaPack → Manage repositories**
-
-**2. Add this repository URL: `https://github.com/ThomasListens/TLM-JSFX/raw/main/index.xml`**
-
-**3. Synchronize packages**
-
-**4. Find "TLM JSFX" in the package browser**
-
-
-
-**### Manual Installation**
-
-
-
-**Copy the `.jsfx` files to your REAPER Effects folder.**
-
-
-
-**## License**
-
-
-
-**These plugins are provided as-is for creative use.**
-
-
-
-**## Credits**
-
-
-
-**Created by Thomas Meier with AI assistance from Claude.**
-
+Created by Thomas Meier with AI assistance from Claude.
