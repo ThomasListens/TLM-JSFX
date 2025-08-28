@@ -3,14 +3,14 @@
   <category name="Effects">
     <reapack name="Seed Delay" type="effect" desc="Multi-tap delay with creative algorithms">
       <version name="1.0" author="Thomas Listens">
-        <source main="effect">Seed Delay.jsfx</source>
+        <source main="effect">SeedDelay.jsfx</source>
       </version>
     </reapack>
   </category>
   <category name="Utility">
     <reapack name="Tap Timing Utility" type="effect" desc="Timing measurement tool">
       <version name="1.0" author="Thomas Listens">
-        <source main="effect">Tap Timing Utility.jsfx</source>
+        <source main="effect">TapTimingUtility.jsfx</source>
       </version>
     </reapack>
   </category>
