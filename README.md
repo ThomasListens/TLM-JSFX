@@ -6,6 +6,8 @@ A collection of JSFX plugins for REAPER. I'm just getting started but am commite
 
 A multi-tap delay plugin featuring creative, musical, and organically-inspired algorithms to produce 12 unique delay timings.
 
+![Seed Delay Interface](https://i.imgur.com/kbfxQ4Y.png)
+
 ### Features
 
 - 12-tap delay matrix with individual control over each tap
@@ -38,6 +40,8 @@ A multi-tap delay plugin featuring creative, musical, and organically-inspired a
 ## Tap Timing Utility
 
 A timing measurement plugin for REAPER that helps you set delays and time-based effects "by hand" using your mouse or keyboard
+
+![Tap Timing Utility Interface](https://i.imgur.com/xSkC0bt.png)
 
 ### Features
 
