@@ -1,0 +1,469 @@
+desc: Tap Timing Utility with MIDI Input
+author: Claude & Thomas
+version: 2.1
+provides: timing_utility_midi
+
+slider1:120<60,200,1>Current BPM
+slider2:0<0,1,1{Off,On}>Audio Click
+slider3:1<0,1,1{Off,On}>Show History/Average
+slider4:0<0,1,1{Off,On}>Show Project Info
+slider5:0<0,1,1{Mouse,MIDI}>Input Mode
+
+@init
+// Core timing variables
+click_count = 0;
+last_click_sample = 0;
+timing_ms = 0;
+timing_samples = 0;
+timing_beats = 0;
+timing_hz = 0;
+
+// History arrays
+history_ms[0] = 0;
+history_ms[1] = 0;
+history_ms[2] = 0;
+history_hz[0] = 0;
+history_hz[1] = 0;
+history_hz[2] = 0;
+history_count = 0;
+
+// Previous timing for comparison
+previous_timing_ms = 0;
+previous_timing_samples = 0;
+
+// BPM tracking
+current_bpm = 120;
+remembered_tempo = 120;
+
+// Audio click
+click_freq = 1000;
+click_duration = 0.005;
+click_amp = 0.1;
+click_phase = 0;
+click_active = 0;
+click_samples_left = 0;
+
+// Mouse state
+mouse_was_down = 0;
+
+// Sample counter
+sample_counter = 0;
+
+// GUI refresh tracking
+last_gfx_time = 0;
+gfx_refresh_rate = 0;
+fps_sample_count = 0;
+fps_sum = 0;
+timing_precision_ms = 0;
+
+// MIDI state
+midi_note_on = 0;
+last_midi_note = 0;
+midi_triggered = 0;
+
+@slider
+current_bpm = slider1;
+
+@block
+// Track project tempo
+tempo > 0 ? (
+  remembered_tempo = tempo;
+  slider1 = tempo;
+) : (
+  remembered_tempo > 0 ? slider1 = remembered_tempo;
+);
+
+@sample
+sample_counter += 1;
+
+// Process MIDI input in @sample for accurate timing
+slider5 == 1 ? (
+  while (midirecv(offset, msg1, msg2, msg3)) (
+    // Check for note on (status 0x90-0x9F)
+    status = msg1 & 0xF0;
+    velocity = msg3;
+    note = msg2;
+    
+    status == 0x90 && velocity > 0 ? (
+      // Note on detected - only process if not already triggered
+      !midi_triggered ? (
+        midi_triggered = 1;
+        last_midi_note = note;
+        
+        // Trigger audio click
+        slider2 ? (
+          click_active = 1;
+          click_samples_left = click_duration * srate;
+          click_phase = 0;
+        );
+        
+        // Process tap timing
+        click_count == 0 ? (
+          // First click - just start timing
+          last_click_sample = sample_counter;
+          click_count = 1;
+          timing_ms = 0;
+          timing_hz = 0;
+          timing_samples = 0;
+          previous_timing_ms = 0;
+          history_count = 0;
+        ) : (
+          // Calculate interval since last click
+          current_sample = sample_counter;
+          new_samples = current_sample - last_click_sample;
+          new_ms = new_samples * 1000.0 / srate;
+          new_hz = new_ms > 0 ? 1000.0 / new_ms : 0;
+          
+          // Store previous before updating (only if we had a measurement)
+          timing_ms > 0 ? (
+            previous_timing_ms = timing_ms;
+            
+            // Add to history
+            history_ms[2] = history_ms[1];
+            history_ms[1] = history_ms[0];
+            history_ms[0] = timing_ms;
+            history_count < 3 ? history_count += 1;
+          );
+          
+          // Update current timing
+          timing_ms = new_ms;
+          timing_samples = new_samples;
+          timing_hz = new_hz;
+          
+          // Calculate beats
+          tempo_to_use = remembered_tempo > 0 ? remembered_tempo : current_bpm;
+          tempo_to_use <= 0 ? tempo_to_use = 120;
+          beat_duration_ms = 60000.0 / tempo_to_use;
+          timing_beats = timing_ms / beat_duration_ms;
+          
+          last_click_sample = current_sample;
+          click_count += 1;
+        );
+      );
+    ) : (
+      // Note off - check if it's the note we triggered on
+      (status == 0x80 || (status == 0x90 && velocity == 0)) && note == last_midi_note ? (
+        midi_triggered = 0;
+      );
+    );
+  );
+);
+
+// Audio click generation
+click_active && slider2 ? (
+  click_out = sin(click_phase) * click_amp * (click_samples_left / (click_duration * srate));
+  click_phase += 2 * $pi * click_freq / srate;
+  click_samples_left -= 1;
+  
+  click_samples_left <= 0 ? (
+    click_active = 0;
+    click_phase = 0;
+  );
+  
+  spl0 += click_out;
+  spl1 += click_out;
+);
+
+@gfx 450 420
+// Force maximum refresh rate
+gfx_ext_retina = 1;
+
+// Track GUI refresh rate (only for mouse mode)
+slider5 == 0 ? (
+  current_time = time_precise();
+  last_gfx_time > 0 ? (
+    frame_time = current_time - last_gfx_time;
+    frame_time > 0 && frame_time < 1 ? (
+      fps_sample_count += 1;
+      fps_sum += 1.0 / frame_time;
+      fps_sample_count > 30 ? (
+        gfx_refresh_rate = fps_sum / fps_sample_count;
+        timing_precision_ms = 1000.0 / gfx_refresh_rate;
+        fps_sample_count = 0;
+        fps_sum = 0;
+      );
+    );
+  );
+  last_gfx_time = current_time;
+  
+  // Initialize timing precision if not set
+  timing_precision_ms == 0 ? timing_precision_ms = 50;
+  gfx_refresh_rate == 0 ? gfx_refresh_rate = 20;
+);
+
+// Force continuous redraw
+gfx_a = 1;
+
+// Background
+gfx_r = 0.06; gfx_g = 0.06; gfx_b = 0.06;
+gfx_rect(0, 0, gfx_w, gfx_h);
+
+// Mode indicator at top
+gfx_setfont(1, "Consolas", 14);
+slider5 == 1 ? (
+  gfx_r = 0.2; gfx_g = 0.8; gfx_b = 0.2;
+  gfx_x = 20; gfx_y = 10;
+  gfx_printf("MIDI MODE");
+) : (
+  gfx_r = 0.4; gfx_g = 0.4; gfx_b = 0.8;
+  gfx_x = 20; gfx_y = 10;
+  gfx_printf("MOUSE MODE");
+);
+
+// Mouse handling (only in mouse mode)
+slider5 == 0 ? (
+  mouse_is_down = mouse_cap & 1;
+  left_clicked = mouse_is_down && !mouse_was_down;
+  right_clicked = mouse_cap & 2;
+  mouse_was_down = mouse_is_down;
+
+  // LEFT CLICK handling
+  left_clicked ? (
+    // Trigger audio click
+    slider2 ? (
+      click_active = 1;
+      click_samples_left = click_duration * srate;
+      click_phase = 0;
+    );
+    
+    click_count == 0 ? (
+      // First click - just start timing
+      last_click_sample = sample_counter;
+      click_count = 1;
+      timing_ms = 0;
+      timing_hz = 0;
+      timing_samples = 0;
+      previous_timing_ms = 0;
+      history_count = 0;
+    ) : (
+      // Calculate interval since last click
+      current_sample = sample_counter;
+      new_samples = current_sample - last_click_sample;
+      new_ms = new_samples * 1000.0 / srate;
+      new_hz = new_ms > 0 ? 1000.0 / new_ms : 0;
+      
+      // Store previous before updating (only if we had a measurement)
+      timing_ms > 0 ? (
+        previous_timing_ms = timing_ms;
+        
+        // Add to history
+        history_ms[2] = history_ms[1];
+        history_ms[1] = history_ms[0];
+        history_ms[0] = timing_ms;
+        history_count < 3 ? history_count += 1;
+      );
+      
+      // Update current timing
+      timing_ms = new_ms;
+      timing_samples = new_samples;
+      timing_hz = new_hz;
+      
+      // Calculate beats
+      tempo_to_use = remembered_tempo > 0 ? remembered_tempo : current_bpm;
+      tempo_to_use <= 0 ? tempo_to_use = 120;
+      beat_duration_ms = 60000.0 / tempo_to_use;
+      timing_beats = timing_ms / beat_duration_ms;
+      
+      last_click_sample = current_sample;
+      click_count += 1;
+    );
+  );
+
+  // RIGHT CLICK - reset
+  right_clicked ? (
+    click_count = 0;
+    timing_ms = 0;
+    timing_samples = 0;
+    timing_beats = 0;
+    timing_hz = 0;
+    previous_timing_ms = 0;
+    previous_timing_samples = 0;
+    history_count = 0;
+    i = 0;
+    while (i < 3) (
+      history_ms[i] = 0;
+      history_hz[i] = 0;
+      i += 1;
+    );
+  );
+) : (
+  // MIDI mode - check for right mouse click to reset
+  mouse_cap & 2 ? (
+    click_count = 0;
+    timing_ms = 0;
+    timing_samples = 0;
+    timing_beats = 0;
+    timing_hz = 0;
+    previous_timing_ms = 0;
+    previous_timing_samples = 0;
+    history_count = 0;
+    midi_triggered = 0;
+    i = 0;
+    while (i < 3) (
+      history_ms[i] = 0;
+      history_hz[i] = 0;
+      i += 1;
+    );
+  );
+);
+
+// Project info display
+y_pos = 35;
+slider4 ? (
+  gfx_setfont(1, "Consolas", 12);
+  
+  tempo > 0 ? (
+    gfx_r = 0.29; gfx_g = 0.4; gfx_b = 0.25;
+    gfx_x = 20; gfx_y = y_pos;
+    gfx_printf("PROJECT TEMPO: %.2f BPM (playing)", tempo);
+  ) : remembered_tempo > 0 ? (
+    gfx_r = 0.7; gfx_g = 0.5; gfx_b = 0.2;
+    gfx_x = 20; gfx_y = y_pos;
+    gfx_printf("PROJECT TEMPO: %.2f BPM (paused)", remembered_tempo);
+  ) : (
+    gfx_r = 0.4; gfx_g = 0.4; gfx_b = 0.4;
+    gfx_x = 20; gfx_y = y_pos;
+    gfx_printf("PROJECT TEMPO: Not available");
+  );
+  
+  gfx_r = 0.4; gfx_g = 0.4; gfx_b = 0.4;
+  gfx_x = 20; gfx_y = y_pos + 15;
+  gfx_printf("Time Sig: %.0f/%.0f", ts_num, ts_denom);
+  
+  gfx_x = 20; gfx_y = y_pos + 30;
+  minutes = floor(play_position / 60);
+  seconds = play_position - minutes * 60;
+  gfx_printf("Position: %.0f:%06.3f (%.3f beats)", minutes, seconds, beat_position);
+  
+  gfx_x = 20; gfx_y = y_pos + 45;
+  state_text = play_state == 0 ? "Stopped" : play_state == 1 ? "Playing" : "Paused";
+  gfx_printf("Status: %s", state_text);
+  
+  y_pos += 75;
+  
+  gfx_r = 0.16; gfx_g = 0.25; gfx_b = 0.13;
+  gfx_line(20, y_pos - 5, 300, y_pos - 5);
+);
+
+// Status display
+gfx_setfont(1, "Consolas", 14);
+status_y = y_pos + 10;
+
+click_count == 0 ? (
+  gfx_r = 0.4; gfx_g = 0.4; gfx_b = 0.4;
+  gfx_x = 20; gfx_y = status_y;
+  gfx_printf("● READY");
+) : (
+  gfx_r = 0.29; gfx_g = 0.4; gfx_b = 0.25;
+  gfx_x = 20; gfx_y = status_y;
+  gfx_printf("● TIMING");
+);
+
+// Results display
+timing_ms > 0 ? (
+  result_y = status_y + 40;
+  
+  // Main timing display
+  gfx_setfont(1, "Consolas", 18);
+  gfx_r = 0.94; gfx_g = 0.94; gfx_b = 0.94;
+  gfx_x = 20; gfx_y = result_y;
+  gfx_printf("%.3f ms", timing_ms);
+  
+  // Hz display
+  gfx_setfont(1, "Consolas", 16);
+  gfx_r = 0.8; gfx_g = 0.6; gfx_b = 0.2;
+  gfx_x = 200; gfx_y = result_y;
+  gfx_printf("%.2f Hz", timing_hz);
+  
+  gfx_r = 0.16; gfx_g = 0.25; gfx_b = 0.13;
+  gfx_line(20, result_y + 25, 320, result_y + 25);
+  
+  // Beat relationship
+  gfx_setfont(1, "Consolas", 14);
+  tempo_to_use = remembered_tempo > 0 ? remembered_tempo : current_bpm;
+  tempo_desc = tempo > 0 ? "(from project)" : remembered_tempo > 0 ? "(last known)" : "(manual)";
+  
+  gfx_r = 0.29; gfx_g = 0.4; gfx_b = 0.25;
+  gfx_x = 20; gfx_y = result_y + 35;
+  gfx_printf("%.3f beats @ %.1f BPM %s", timing_beats, tempo_to_use, tempo_desc);
+  
+  // Samples
+  gfx_r = 0.4; gfx_g = 0.4; gfx_b = 0.4;
+  gfx_x = 20; gfx_y = result_y + 80;
+  gfx_printf("%.0f samples @ %.0f Hz", timing_samples, srate);
+  
+  // Show precision indicator ONLY for mouse mode
+  slider5 == 0 ? (
+    gfx_setfont(1, "Consolas", 11);
+    gfx_r = 0.8; gfx_g = 0.2; gfx_b = 0.2;
+    gfx_x = 20; gfx_y = result_y + 95;
+    gfx_printf("(±%.0f ms timing window)", timing_precision_ms * 0.5);
+  );
+  
+  // Previous comparison - only show if we have previous
+  previous_timing_ms > 0 && click_count > 2 ? (
+    gfx_setfont(1, "Consolas", 12);
+    gfx_r = 0.5; gfx_g = 0.5; gfx_b = 0.5;
+    gfx_x = 20; gfx_y = result_y + 115;
+    diff_ms = timing_ms - previous_timing_ms;
+    sign = diff_ms >= 0 ? "+" : "";
+    gfx_printf("Previous: %.1f ms (%s%.1f)", previous_timing_ms, sign, diff_ms);
+  );
+  
+  // History display - only show if we have history
+  slider3 && history_count > 0 && click_count > 2 ? (
+    hist_y = result_y + 145;
+    gfx_setfont(1, "Consolas", 11);
+    gfx_r = 0.4; gfx_g = 0.4; gfx_b = 0.4;
+    gfx_x = 20; gfx_y = hist_y;
+    gfx_printf("HISTORY:");
+    
+    hist_y += 15;
+    i = 0;
+    while (i < history_count) (
+      gfx_x = 20; gfx_y = hist_y + i * 15;
+      gfx_r = 0.6; gfx_g = 0.6; gfx_b = 0.6;
+      gfx_printf("%.1f ms", history_ms[i]);
+      i += 1;
+    );
+    
+    // Average
+    avg_ms = 0;
+    i = 0;
+    while (i < history_count) (
+      avg_ms += history_ms[i];
+      i += 1;
+    );
+    avg_ms /= history_count;
+    
+    gfx_setfont(1, "Consolas", 12);
+    gfx_r = 0.29; gfx_g = 0.4; gfx_b = 0.25;
+    gfx_x = 20; gfx_y = hist_y + history_count * 15 + 5;
+    gfx_printf("Average: %.1f ms", avg_ms);
+  );
+);
+
+// Display timing precision info - ONLY for mouse mode
+slider5 == 0 ? (
+  gfx_setfont(1, "Consolas", 14);
+  gfx_r = 0.9; gfx_g = 0.2; gfx_b = 0.2;
+  gfx_x = 20; gfx_y = gfx_h - 65;
+  gfx_printf("⚠ Timing Precision: ±%.0f ms (%.0f FPS)", timing_precision_ms * 0.5, gfx_refresh_rate);
+
+  // Additional warning
+  gfx_setfont(1, "Consolas", 12);
+  gfx_r = 0.8; gfx_g = 0.3; gfx_b = 0.3;
+  gfx_x = 20; gfx_y = gfx_h - 45;
+  gfx_printf("Mouse timing is limited by GUI refresh rate");
+);
+
+// Instructions
+gfx_setfont(1, "Consolas", 10);
+gfx_r = 0.4; gfx_g = 0.4; gfx_b = 0.4;
+gfx_x = 20; gfx_y = gfx_h - 25;
+gfx_printf("Right click: Reset");
+
+// Corner accent
+gfx_r = 0.16; gfx_g = 0.25; gfx_b = 0.13;
+gfx_rect(0, 0, 3, 20);
+gfx_rect(0, 0, 20, 3);

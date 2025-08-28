@@ -1,0 +1,839 @@
+desc:Seed Delay
+author:Claude & Thomas
+version: 7.0
+
+slider1:1<1,12,1>-Delay Choice (Legacy)
+slider2:0<0,1,1>Regenerate
+slider3:0.3<0,1,0.01>Mix
+slider4:0.3<0,1,0.01>Feedback
+slider5:0<0,500,1>Min Delay (ms)
+slider6:1000<50,3000,1>Max Delay (ms)
+slider7:0<0,4,1{Free,1/4 Note,1/2 Note,1/1 Note,2/1 Note}>Timing
+slider8:0<0,7,1{Seed Random ⚡,Quantum Shuffle ⚛,Perlin Noise ∿,Spiral Wave ◉,Chromatic ÷,Harmonic ∑,Fibonacci φ,L-System ℒ}>Algorithm
+slider9:0<0,1,1{Normal,Inverted}>Invert Values
+slider10:0<0,1,0.01>Dirt
+slider11:0<-1,1,0.01>Moonlight ◐ Sunlight
+
+options:gfx_hz=30 no_meter
+
+@init
+ext_noinit = 1;
+
+// Constants
+MAX_TAPS = 12;
+BUFFER_SIZE = 131072;
+FEEDBACK_LIMIT = 0.98;
+BLOCK_SMOOTH_HZ = 20;
+
+generation_count = 1;
+last_reroll_state = 0;
+last_timing_mode = -1;
+last_algorithm = -1;
+last_invert_mode = 0;
+
+// Memory layout
+mem_offset = 0;
+
+delay_buffer_L = mem_offset;
+mem_offset += BUFFER_SIZE;
+delay_buffer_R = mem_offset;
+mem_offset += BUFFER_SIZE;
+
+// Tap arrays
+tap_selected = mem_offset;
+mem_offset += MAX_TAPS;
+tap_volumes = mem_offset;
+mem_offset += MAX_TAPS;
+tap_volumes_smooth = mem_offset;
+mem_offset += MAX_TAPS;
+tap_pans = mem_offset;
+mem_offset += MAX_TAPS;
+
+// Algorithm storage
+algo_storage = mem_offset;
+mem_offset += (8 * MAX_TAPS);
+
+// Clear memory
+memset(0, 0, mem_offset);
+
+// Initialize defaults
+i = 0;
+loop(MAX_TAPS,
+  tap_selected[i] = (i < 2) ? 1 : 0;
+  tap_volumes[i] = 0.5;
+  tap_volumes_smooth[i] = 0.5;
+  tap_pans[i] = 0.0;
+  i += 1;
+);
+
+write_pos = 0;
+mix_smooth = slider3;
+feedback_smooth = slider4;
+warmth_smooth = slider10;
+ceiling_smooth = slider11;
+
+// Mouse state
+last_mouse_cap = 0;
+dragging_volume = 0;
+dragging_pan = 0;
+shift_drag_mode = 0;
+shift_drag_target_state = 0;
+last_click_time = 0;
+last_click_tap = -1;
+
+// Core functions
+function tanh(x) (
+  x = max(-3, min(3, x));
+  (exp(2*x) - 1) / (exp(2*x) + 1)
+);
+
+function dc_block(x) 
+instance(y1, x1)
+(
+  y1 = x - x1 + 0.995 * y1;
+  x1 = x;
+  y1
+);
+
+function hermite_interp(buffer, pos, size)
+local(pos_int, pos_frac, idx0, idx1, idx2, idx3, c0, c1, c2, c3, y0, y1, y2, y3)
+(
+  pos_int = floor(pos);
+  pos_frac = pos - pos_int;
+  
+  idx0 = (pos_int - 1) & (size - 1);
+  idx1 = pos_int & (size - 1);
+  idx2 = (pos_int + 1) & (size - 1);
+  idx3 = (pos_int + 2) & (size - 1);
+  
+  y0 = buffer[idx0];
+  y1 = buffer[idx1];
+  y2 = buffer[idx2];
+  y3 = buffer[idx3];
+  
+  c0 = -0.5 * y0 + 1.5 * y1 - 1.5 * y2 + 0.5 * y3;
+  c1 = y0 - 2.5 * y1 + 2 * y2 - 0.5 * y3;
+  c2 = -0.5 * y0 + 0.5 * y2;
+  c3 = y1;
+  
+  ((c0 * pos_frac + c1) * pos_frac + c2) * pos_frac + c3;
+);
+
+// Algorithm storage
+function get_base_value(slot)
+local(addr, val)
+(
+  slot >= 0 && slot < MAX_TAPS ? (
+    addr = algo_storage + slider8 * MAX_TAPS + slot;
+    val = max(0, min(1, addr[0]));
+    slider9 > 0.5 ? val = 1.0 - val : val;
+    val;
+  ) : 0.5
+);
+
+function set_algo_value(algo, slot, val) (
+  slot >= 0 && slot < MAX_TAPS && algo >= 0 && algo < 8 ? (
+    addr = algo_storage + algo * MAX_TAPS + slot;
+    addr[0] = max(0, min(1, val));
+  );
+);
+
+function generate_algorithm_values(algo_num)
+local(i, seed, val, angle, wave_phase, phi, a, b, c)
+(
+  algo_num >= 0 && algo_num < 8 ? (
+    algo_num == 0 ? (
+      i = 0;
+      loop(MAX_TAPS,
+        seed = (generation_count * 7919 + i * 2654435761) & 2147483647;
+        seed = (seed * 16807) & 2147483647;
+        val = (seed / 2147483647.0) * 0.8 + 0.1;
+        set_algo_value(algo_num, i, val);
+        i += 1;
+      );
+    ) : algo_num == 1 ? (
+      i = 0;
+      loop(MAX_TAPS,
+        val = (i + 0.5 + sin(generation_count * 0.1 + i)) / MAX_TAPS;
+        val = max(0.05, min(0.95, val));
+        set_algo_value(algo_num, i, val);
+        i += 1;
+      );
+    ) : algo_num == 2 ? (
+      i = 0;
+      loop(MAX_TAPS,
+        a = sin(i * 0.8 + generation_count * 0.2);
+        b = sin(i * 2.1 + generation_count * 0.15);
+        val = 0.5 + 0.3 * a + 0.1 * b;
+        val = max(0.1, min(0.9, val));
+        set_algo_value(algo_num, i, val);
+        i += 1;
+      );
+    ) : algo_num == 3 ? (
+      i = 0;
+      loop(MAX_TAPS,
+        angle = i * 0.523599;
+        a = sin(angle * 2 + generation_count * 0.3);
+        b = cos(angle * 3 + generation_count * 0.21);
+        val = 0.5 + 0.25 * a + 0.15 * b;
+        val = max(0.15, min(0.85, val));
+        set_algo_value(algo_num, i, val);
+        i += 1;
+      );
+    ) : algo_num == 4 ? (
+      i = 0;
+      loop(MAX_TAPS,
+        val = (i + 1) / 12.0;
+        set_algo_value(algo_num, i, val);
+        i += 1;
+      );
+    ) : algo_num == 5 ? (
+      i = 0;
+      loop(MAX_TAPS,
+        val = (1.0 / (i + 1)) * 0.8 + 0.1;
+        // Make sure the last tap gets exactly 1/12
+        i == 11 ? val = (1.0 / 12.0) * 0.8 + 0.1;
+        set_algo_value(algo_num, i, val);
+        i += 1;
+      );
+    ) : algo_num == 6 ? (
+      phi = 1.618034;
+      i = 0;
+      loop(MAX_TAPS,
+        val = abs(sin(i * phi + generation_count * 0.1)) * 0.7 + 0.15;
+        set_algo_value(algo_num, i, val);
+        i += 1;
+      );
+    ) : (
+      i = 0;
+      loop(MAX_TAPS,
+        a = sin(i * 1.41421 + generation_count * 0.31416);
+        b = sin(i * 0.707 + generation_count * 0.1);
+        val = 0.3 + 0.4 * abs(a) + 0.1 * b;
+        val = max(0.1, min(0.9, val));
+        set_algo_value(algo_num, i, val);
+        i += 1;
+      );
+    );
+  );
+);
+
+function get_delay_ms(slot)
+local(base_val, min_val, max_val)
+(
+  slot >= 0 && slot < MAX_TAPS ? (
+    base_val = get_base_value(slot);
+    min_val = max(1, slider5);
+    max_val = max(min_val + 10, slider6);
+    min_val + base_val * (max_val - min_val);
+  ) : 100;
+);
+
+// Sunlight/Moonlight processor - bipolar character shaping
+function light_process(x, amount)
+instance(shimmer_phase, comp_state, harmonic_acc, heat_wave_phase, cooling_filter)
+local(abs_amount, is_sunlight, compressed, harmonic_content, spectral_mod, shimmer, compensation, heat_wave, smooth_factor)
+(
+  abs_amount = abs(amount);
+  is_sunlight = amount > 0;
+  
+  abs_amount > 0.02 ? (
+    is_sunlight ? (
+      // SUNLIGHT: Intense heat waves, pushing down, modulated pressure
+      
+      // More aggressive downward compression - sun pressing down
+      compressed = x > 0.2 ? (
+        0.2 + (x - 0.2) * (1 / (1 + (x - 0.2) * abs_amount * 5))
+      ) : x < -0.2 ? (
+        -0.2 + (x + 0.2) * (1 / (1 + abs(x + 0.2) * abs_amount * 5))
+      ) : x * (1 + abs_amount * 0.3);
+      
+      // Heat wave modulation - sun rays pressing and releasing (fix ringing)
+      heat_wave_phase += abs(x) * abs_amount * 0.2; // Reduced and input-dependent
+      heat_wave_phase = heat_wave_phase - floor(heat_wave_phase);
+      heat_wave = sin(heat_wave_phase * 6.28) * abs_amount * abs(x) * 0.12; // Input-dependent
+      heat_wave += sin(heat_wave_phase * 12.56 + 1.57) * abs_amount * abs(x) * 0.06; // Also input-dependent
+      
+      // Even harmonics with heat wave modulation
+      harmonic_content = compressed * (1 + heat_wave * 0.6);
+      harmonic_content += sin(harmonic_content * 2 * 3.14159) * abs_amount * 0.14; // 2nd harmonic
+      harmonic_content += sin(harmonic_content * 4 * 3.14159) * abs_amount * 0.09; // 4th harmonic  
+      harmonic_content += sin(harmonic_content * 6 * 3.14159) * abs_amount * 0.05; // 6th harmonic
+      
+      // Spectral heat shimmer - more aggressive (input-dependent to prevent ringing)
+      harmonic_acc += abs(x) * abs_amount * 0.15; // Input-dependent
+      harmonic_acc = harmonic_acc - floor(harmonic_acc);
+      spectral_mod = sin(harmonic_acc * 6.28) * abs_amount * abs(x) * 0.06; // Input-dependent  
+      spectral_mod += sin(harmonic_acc * 18.84) * abs_amount * abs(x) * 0.03; // Also input-dependent
+      
+      // Apply heat wave pressure to final output
+      final_output = (harmonic_content * (1 + spectral_mod)) * (1 + heat_wave * 0.3);
+      
+      // Level compensation for sunlight intensity - more aggressive
+      compensation = 0.62 / (1.0 + abs_amount * 1.1);
+      final_output * compensation;
+      
+    ) : (
+      // MOONLIGHT: Simple beauty - gentle harmonics, upward compression, chorus magic
+      
+      // Gentle upward compression - soft lifting
+      compressed = abs(x) < 0.5 ? (
+        x * (1 + abs_amount * 0.8)
+      ) : (
+        sign(x) * (0.5 + (abs(x) - 0.5) * (1 - abs_amount * 0.3))
+      );
+      
+      // Simple gentle harmonics - no phase offsets, just pure
+      harmonic_content = compressed;
+      harmonic_content += sin(compressed * 3 * 3.14159) * abs_amount * 0.04; // 3rd harmonic
+      harmonic_content += sin(compressed * 5 * 3.14159) * abs_amount * abs_amount * 0.02; // 5th harmonic
+      
+      // CHORUS MAGIC - more pronounced dual delay lines with pitch modulation
+      shimmer_phase += abs_amount * 0.2; // Slow LFO
+      shimmer_phase = shimmer_phase - floor(shimmer_phase);
+      
+      // Enhanced chorus effect - more noticeable pitch/timing variations
+      chorus_mod1 = sin(shimmer_phase * 6.28) * abs_amount * 0.005; // More pitch bend
+      chorus_mod2 = sin(shimmer_phase * 6.28 * 1.3 + 1.57) * abs_amount * 0.004; // More modulation
+      chorus_mod3 = sin(shimmer_phase * 6.28 * 0.7 + 3.14) * abs_amount * 0.003; // Third chorus voice
+      
+      // Apply chorus modulation with three voices
+      chorus_content = harmonic_content * (1 + chorus_mod1); // Main voice
+      chorus_content += harmonic_content * 0.5 * (1 + chorus_mod2); // Second voice
+      chorus_content += harmonic_content * 0.3 * (1 + chorus_mod3); // Third voice, quieter
+      
+      // Very gentle shimmer on top
+      gentle_shimmer = sin(shimmer_phase * 6.28 * 0.7) * abs_amount * abs(x) * 0.015;
+      
+      // Simple final mix
+      final_moonlight = (chorus_content + gentle_shimmer) * 0.65; // Slightly lower to compensate for more chorus
+      
+      // More level compensation
+      compensation = 0.75 / (1.0 + abs_amount * 0.6);
+      final_moonlight * compensation;
+    );
+  ) : x;
+);
+
+// Chaotic dirt processor - algorithm-driven chaos
+function warmth_process(x, amount)
+instance(chaos_state, last_val, smear_buffer, smear_idx, grain_phase, destruction_acc)
+local(algo_chaos, destruction_factor, smear_amount, grain_size, spectral_shift, 
+      digital_crush, time_smear, feedback_chaos, final_chaos)
+(
+  amount = max(0, min(1, amount));
+  
+  amount > 0.01 ? (
+    // Use current algorithm values to drive chaos parameters
+    algo_chaos = get_base_value(floor(amount * 11)); // Use dirt amount to pick algorithm slot
+    destruction_factor = algo_chaos * amount;
+    
+    // 1. SPECTRAL DESTRUCTION - frequency domain chaos
+    spectral_shift = sin(destruction_acc * 3.14159 + algo_chaos * 6.28) * amount * 0.8;
+    destruction_acc += abs(x - last_val) * destruction_factor * 2;
+    destruction_acc = destruction_acc - floor(destruction_acc);
+    
+    // 2. TIME SMEARING - sample-and-hold chaos with algorithm-driven timing
+    smear_amount = destruction_factor;
+    grain_size = 1 + floor(algo_chaos * amount * 32); // Algorithm controls grain size
+    smear_idx = (smear_idx + 1) % max(1, grain_size);
+    smear_idx == 0 ? smear_buffer = x; // Sample new value
+    time_smear = x * (1 - smear_amount) + smear_buffer * smear_amount;
+    
+    // 3. DIGITAL CRUSH - aggressive bit/sample rate reduction
+    crush_bits = max(4, 16 - floor(destruction_factor * 10));
+    crush_rate = max(1, floor(destruction_factor * 8) + 1);
+    chaos_state = (chaos_state + 1) % crush_rate;
+    chaos_state == 0 ? (
+      crush_quant = 2^crush_bits;
+      digital_crush = floor(time_smear * crush_quant + 0.5) / crush_quant;
+    );
+    
+    // 4. FEEDBACK CHAOS - self-modulating destruction
+    feedback_chaos = digital_crush + (digital_crush * digital_crush * destruction_factor * 0.3);
+    feedback_chaos += sin(feedback_chaos * 8 + algo_chaos * 12.56) * destruction_factor * 0.2;
+    
+    // 5. SPECTRAL SHIFT - pitch-like modulation
+    final_chaos = feedback_chaos * (1 + spectral_shift);
+    
+    // 6. AGGRESSIVE SATURATION - digital clipping
+    final_chaos = max(-1.5, min(1.5, final_chaos * (1 + destruction_factor)));
+    final_chaos = final_chaos / (1 + abs(final_chaos) * 0.3); // Soft clip back
+    
+    // Level compensation with slight boost for perceived energy
+    compensation = 0.7 / (1.0 + destruction_factor * 0.5);
+    last_val = x;
+    
+    final_chaos * compensation;
+  ) : x;
+);
+
+// Initialize all algorithms
+i = 0;
+loop(8,
+  generate_algorithm_values(i);
+  i += 1;
+);
+
+@slider
+slider5 = max(0, min(2000, slider5));
+slider6 = max(slider5 + 10, min(5000, slider6));
+slider3 = max(0, min(1, slider3));
+slider4 = max(0, min(FEEDBACK_LIMIT, slider4));
+slider10 = max(0, min(1, slider10));
+slider11 = max(-1, min(1, slider11));
+
+// Re-roll
+slider2 > 0.5 && last_reroll_state <= 0.5 ? (
+  generation_count += 1;
+  generate_algorithm_values(slider8);
+);
+last_reroll_state = slider2;
+
+// Timing changes
+slider7 != last_timing_mode ? (
+  slider7 > 0 && tempo > 0 ? (
+    bpm = max(60, min(200, tempo));
+    current_bpm = bpm; // Fixed variable name
+    beat_ms = 60000 / bpm;
+    slider7 == 1 ? slider6 = beat_ms * 0.25 :
+    slider7 == 2 ? slider6 = beat_ms * 0.5 :
+    slider7 == 3 ? slider6 = beat_ms * 1.0 :
+    slider6 = beat_ms * 2.0;
+    slider6 = max(10, min(3000, slider6));
+  ) : (
+    current_bpm = 0; // Clear BPM when timing mode is off
+  );
+  last_timing_mode = slider7;
+);
+
+// Algorithm changes
+slider8 != last_algorithm ? (
+  last_algorithm = slider8;
+);
+
+// Invert changes
+slider9 != last_invert_mode ? (
+  last_invert_mode = slider9;
+);
+
+@block
+block_samples = samplesblock;
+block_smooth = 1 - exp(-2 * $pi * BLOCK_SMOOTH_HZ * block_samples / srate);
+
+// Smooth tap parameters
+i = 0;
+loop(MAX_TAPS,
+  tap_volumes_smooth[i] += block_smooth * (tap_volumes[i] - tap_volumes_smooth[i]);
+  i += 1;
+);
+
+// Smooth main parameters with better curves for automation
+mix_target = slider3;
+feedback_target = slider4;
+warmth_target = slider10;
+light_target = slider11;
+
+mix_smooth += block_smooth * (mix_target - mix_smooth);
+feedback_smooth += block_smooth * (feedback_target - feedback_smooth);
+warmth_smooth += block_smooth * (warmth_target - warmth_smooth);
+light_smooth += block_smooth * (light_target - light_smooth);
+
+@sample
+input_L = dc_L.dc_block(spl0);
+input_R = dc_R.dc_block(spl1);
+
+// Apply warmth to input (pre-delay)
+warmth_smooth > 0.01 ? (
+  input_L = warmth_L.warmth_process(input_L, warmth_smooth);
+  input_R = warmth_R.warmth_process(input_R, warmth_smooth);
+);
+
+// Process delay taps
+mix_L = 0;
+mix_R = 0;
+total_gain = 0;
+
+i = 0;
+loop(MAX_TAPS,
+  tap_selected[i] ? (
+    tap_gain = tap_volumes_smooth[i];
+    
+    delay_ms = get_delay_ms(i);
+    delay_samples = (delay_ms / 1000) * srate;
+    delay_samples = max(4, min(BUFFER_SIZE - 4, delay_samples));
+    
+    read_pos = write_pos - delay_samples;
+    read_pos < 0 ? read_pos += BUFFER_SIZE;
+    
+    delayed_L = hermite_interp(delay_buffer_L, read_pos, BUFFER_SIZE);
+    delayed_R = hermite_interp(delay_buffer_R, read_pos, BUFFER_SIZE);
+    
+    // Apply panning
+    pan_value = tap_pans[i];
+    pan_angle = (pan_value + 1) * $pi * 0.25;
+    pan_L = cos(pan_angle);
+    pan_R = sin(pan_angle);
+    
+    mix_L += delayed_L * tap_gain * pan_L;
+    mix_R += delayed_R * tap_gain * pan_R;
+    total_gain += tap_gain;
+  );
+  i += 1;
+);
+
+// Normalize mix and scale feedback based on active taps
+total_gain > 0.01 ? (
+  norm_factor = min(1.0, 1.0 / sqrt(total_gain));
+  mix_L *= norm_factor;
+  mix_R *= norm_factor;
+  
+  // Scale feedback based on number of active taps to prevent runaway
+  active_tap_count = 0;
+  i = 0;
+  loop(MAX_TAPS,
+    tap_selected[i] ? active_tap_count += 1;
+    i += 1;
+  );
+  
+  // Reduce feedback strength as more taps are active
+  feedback_scale = 1.0 / (1.0 + (active_tap_count - 1) * 0.15);
+  feedback_amount = feedback_smooth * feedback_scale;
+) : (
+  mix_L = 0;
+  mix_R = 0;
+  feedback_amount = 0;
+);
+
+// Apply sunlight/moonlight to the delay mix
+abs(light_smooth) > 0.02 ? (
+  mix_L = light_L.light_process(mix_L, light_smooth);
+  mix_R = light_R.light_process(mix_R, light_smooth);
+);
+
+// Feedback processing
+fb_L = mix_L * feedback_amount;
+fb_R = mix_R * feedback_amount;
+
+// Write to delay buffer
+delay_buffer_L[write_pos] = input_L + fb_L;
+delay_buffer_R[write_pos] = input_R + fb_R;
+
+write_pos = (write_pos + 1) & (BUFFER_SIZE - 1);
+
+// Output mixing
+dry_amount = 1 - mix_smooth;
+wet_amount = mix_smooth;
+
+output_L = input_L * dry_amount + mix_L * wet_amount;
+output_R = input_R * dry_amount + mix_R * wet_amount;
+
+// Final limiter
+limiter_threshold = 0.95;
+abs(output_L) > limiter_threshold ? (
+  output_L = sign(output_L) * (limiter_threshold + 
+    tanh(3 * (abs(output_L) - limiter_threshold)) * 0.05);
+);
+abs(output_R) > limiter_threshold ? (
+  output_R = sign(output_R) * (limiter_threshold + 
+    tanh(3 * (abs(output_R) - limiter_threshold)) * 0.05);
+);
+
+spl0 = output_L;
+spl1 = output_R;
+
+@gfx 400 415
+
+// Mouse handling
+mouse_clicked = (mouse_cap & 1) && !(last_mouse_cap & 1);
+mouse_down = (mouse_cap & 1);
+mouse_released = !(mouse_cap & 1) && (last_mouse_cap & 1);
+shift_held = (mouse_cap & 8);
+ctrl_held = (mouse_cap & 4);
+
+// Handle tap clicks
+mouse_clicked ? (
+  tap_idx = 0;
+  loop(12,
+    col = tap_idx % 4;
+    row = floor(tap_idx / 4);
+    x = 30 + col * 85;
+    y = 30 + row * 70;
+    
+    mouse_in_tap = mouse_x >= x && mouse_x < x + 80 && mouse_y >= y && mouse_y < y + 60;
+    mouse_in_tap ? (
+      tap_selected[tap_idx] = !tap_selected[tap_idx];
+    );
+    tap_idx += 1;
+  );
+);
+
+// Volume bar interactions
+vol_bar_y = 240;
+vol_bar_h = 70;
+vol_bar_w = 340;
+vol_bar_x = 30;
+
+mouse_in_vol_area = mouse_x >= vol_bar_x && mouse_x < vol_bar_x + vol_bar_w &&
+                    mouse_y >= vol_bar_y && mouse_y < vol_bar_y + vol_bar_h;
+
+mouse_in_vol_area && mouse_clicked ? (
+  bar_w = vol_bar_w / 12;
+  bar_idx = floor((mouse_x - vol_bar_x) / bar_w);
+  bar_idx = max(0, min(11, bar_idx));
+  
+  shift_held ? (
+    tap_selected[bar_idx] = !tap_selected[bar_idx];
+    shift_drag_mode = 1; // Start shift-drag mode
+    shift_drag_target_state = tap_selected[bar_idx]; // Remember what state we're setting
+  ) : ctrl_held ? (
+    tap_volumes[bar_idx] = 0.5;
+  ) : (
+    dragging_volume = 1;
+    vol_relative_y = mouse_y - vol_bar_y - 5;
+    new_vol = 1.0 - (vol_relative_y / (vol_bar_h - 10));
+    new_vol = max(0, min(1, new_vol));
+    tap_volumes[bar_idx] = new_vol;
+  );
+);
+
+mouse_down && shift_held && shift_drag_mode && mouse_in_vol_area ? (
+  bar_w = vol_bar_w / 12;
+  bar_idx = floor((mouse_x - vol_bar_x) / bar_w);
+  bar_idx = max(0, min(11, bar_idx));
+  
+  // Set all dragged-over taps to the target state
+  tap_selected[bar_idx] = shift_drag_target_state;
+);
+
+mouse_down && dragging_volume && mouse_in_vol_area ? (
+  bar_w = vol_bar_w / 12;
+  bar_idx = floor((mouse_x - vol_bar_x) / bar_w);
+  bar_idx = max(0, min(11, bar_idx));
+  
+  vol_relative_y = mouse_y - vol_bar_y - 5;
+  new_vol = 1.0 - (vol_relative_y / (vol_bar_h - 10));
+  new_vol = max(0, min(1, new_vol));
+  tap_volumes[bar_idx] = new_vol;
+);
+
+// Pan bar interactions
+pan_bar_y = 325;
+pan_bar_h = 70;
+pan_bar_w = 340;
+pan_bar_x = 30;
+
+mouse_in_pan_area = mouse_x >= pan_bar_x && mouse_x < pan_bar_x + pan_bar_w &&
+                    mouse_y >= pan_bar_y && mouse_y < pan_bar_y + pan_bar_h;
+
+mouse_in_pan_area && mouse_clicked ? (
+  bar_w = pan_bar_w / 12;
+  bar_idx = floor((mouse_x - pan_bar_x) / bar_w);
+  bar_idx = max(0, min(11, bar_idx));
+  
+  shift_held ? (
+    tap_selected[bar_idx] = !tap_selected[bar_idx];
+  ) : ctrl_held ? (
+    tap_pans[bar_idx] = 0.0;
+  ) : (
+    dragging_pan = 1;
+    // Fixed pan calculation - make it more responsive to exact click position
+    center_y = pan_bar_y + pan_bar_h / 2;
+    pan_relative_y = mouse_y - center_y;
+    new_pan = pan_relative_y / ((pan_bar_h - 10) / 2);
+    new_pan = max(-1, min(1, new_pan));
+    tap_pans[bar_idx] = new_pan;
+  );
+);
+
+mouse_down && shift_held && shift_drag_mode && mouse_in_pan_area ? (
+  bar_w = pan_bar_w / 12;
+  bar_idx = floor((mouse_x - pan_bar_x) / bar_w);
+  bar_idx = max(0, min(11, bar_idx));
+  
+  tap_selected[bar_idx] = shift_drag_target_state;
+);
+
+mouse_down && dragging_pan && mouse_in_pan_area ? (
+  bar_w = pan_bar_w / 12;
+  bar_idx = floor((mouse_x - pan_bar_x) / bar_w);
+  bar_idx = max(0, min(11, bar_idx));
+  
+  // Fixed drag calculation - more precise
+  center_y = pan_bar_y + pan_bar_h / 2;
+  pan_relative_y = mouse_y - center_y;
+  new_pan = pan_relative_y / ((pan_bar_h - 10) / 2);
+  new_pan = max(-1, min(1, new_pan));
+  tap_pans[bar_idx] = new_pan;
+);
+
+// End drags
+mouse_released ? (
+  dragging_volume = 0;
+  dragging_pan = 0;
+  shift_drag_mode = 0;
+);
+
+// Clear background
+gfx_set(0.06, 0.08, 0.06);
+gfx_rect(0, 0, gfx_w, gfx_h);
+
+// Draw tap squares - with proper spacing
+tap_idx = 0;
+loop(12,
+  col = tap_idx % 4;
+  row = floor(tap_idx / 4);
+  x = 30 + col * 85;
+  y = 30 + row * 70;
+  
+  vol_intensity = tap_volumes[tap_idx];
+  pan_val = tap_pans[tap_idx];
+  
+  tap_selected[tap_idx] ? (
+    base_r = 0.08 + vol_intensity * 0.35;
+    base_g = 0.2 + vol_intensity * 0.5;
+    base_b = 0.12 + vol_intensity * 0.25;
+    
+    pan_val < -0.05 ? (
+      gfx_set(base_r + 0.08, base_g - 0.08, base_b + 0.02);
+    ) : pan_val > 0.05 ? (
+      gfx_set(base_r + 0.12, base_g + 0.08, base_b - 0.02);
+    ) : (
+      gfx_set(base_r, base_g, base_b);
+    );
+  ) : gfx_set(0.1, 0.12, 0.1);
+  
+  gfx_rect(x, y, 80, 60);
+  gfx_set(0.04, 0.05, 0.04);
+  gfx_rect(x + 2, y + 2, 76, 56);
+  
+  gfx_set(0.85, 0.9, 0.85);
+  gfx_x = x + 5; gfx_y = y + 10; gfx_printf("%.3f", get_base_value(tap_idx));
+  gfx_x = x + 5; gfx_y = y + 35; gfx_printf("%.0fms", get_delay_ms(tap_idx));
+  
+  tap_idx += 1;
+);
+
+// Volume controls
+vol_bar_y = 240;
+gfx_set(0.08, 0.1, 0.08);
+gfx_rect(vol_bar_x, vol_bar_y, vol_bar_w, vol_bar_h, 1);
+gfx_set(0.2, 0.25, 0.2);
+gfx_rect(vol_bar_x, vol_bar_y, vol_bar_w, vol_bar_h, 0);
+
+gfx_set(0.5, 0.6, 0.5);
+gfx_x = 14; gfx_y = vol_bar_y + 20; gfx_drawstr("V");
+gfx_x = 14; gfx_y = vol_bar_y + 32; gfx_drawstr("O");
+gfx_x = 14; gfx_y = vol_bar_y + 44; gfx_drawstr("L");
+
+vol_idx = 0;
+loop(12,
+  bar_w = vol_bar_w / 12;
+  bar_x = vol_bar_x + vol_idx * bar_w;
+  vol_val = tap_volumes[vol_idx];
+  fill_h = vol_val * (vol_bar_h - 10);
+  fill_y = vol_bar_y + vol_bar_h - 5 - fill_h;
+  
+  gfx_set(0.1, 0.12, 0.1);
+  gfx_rect(bar_x + 2, vol_bar_y + 5, bar_w - 4, vol_bar_h - 10);
+  
+  tap_selected[vol_idx] ? (
+    gfx_set(0.15 + vol_val * 0.25, 0.3 + vol_val * 0.35, 0.2 + vol_val * 0.2);
+    gfx_rect(bar_x + 3, fill_y, bar_w - 6, fill_h);
+  );
+  vol_idx += 1;
+);
+
+// Numbers - nudged down into sweet spot
+num_idx = 0;
+loop(12,
+  bar_w = vol_bar_w / 12;
+  bar_x = vol_bar_x + num_idx * bar_w;
+  
+  gfx_set(0.4, 0.5, 0.4);
+  gfx_x = bar_x + bar_w/2 - 4;
+  gfx_y = vol_bar_y + vol_bar_h + 4;
+  gfx_printf("%d", num_idx + 1);
+  num_idx += 1;
+);
+
+// Pan controls
+pan_bar_y = 325;
+gfx_set(0.08, 0.1, 0.08);
+gfx_rect(pan_bar_x, pan_bar_y, pan_bar_w, pan_bar_h, 1);
+gfx_set(0.2, 0.25, 0.2);
+gfx_rect(pan_bar_x, pan_bar_y, pan_bar_w, pan_bar_h, 0);
+
+gfx_set(0.5, 0.6, 0.5);
+gfx_x = 14; gfx_y = pan_bar_y + 15; gfx_drawstr("P");
+gfx_x = 14; gfx_y = pan_bar_y + 27; gfx_drawstr("A");
+gfx_x = 14; gfx_y = pan_bar_y + 39; gfx_drawstr("N");
+
+pan_idx = 0;
+loop(12,
+  bar_w = pan_bar_w / 12;
+  bar_x = pan_bar_x + pan_idx * bar_w;
+  pan_val = tap_pans[pan_idx];
+  
+  gfx_set(0.1, 0.12, 0.1);
+  gfx_rect(bar_x + 2, pan_bar_y + 5, bar_w - 4, pan_bar_h - 10);
+  
+  tap_selected[pan_idx] ? (
+    bar_center_y = pan_bar_y + pan_bar_h / 2;
+    
+    gfx_set(0.6, 0.65, 0.6);
+    gfx_line(bar_x + 4, bar_center_y, bar_x + bar_w - 4, bar_center_y);
+    
+    pan_val < 0 ? (
+      pan_intensity = abs(pan_val);
+      indicator_height = ((pan_bar_h - 10) / 2) * pan_intensity;
+      indicator_y = bar_center_y - indicator_height;
+      
+      gfx_set(0.35 + pan_intensity * 0.2, 0.25 + pan_intensity * 0.15, 0.15 + pan_intensity * 0.1);
+      gfx_rect(bar_x + 4, indicator_y, bar_w - 8, indicator_height);
+    ) : pan_val > 0 ? (
+      pan_intensity = pan_val;
+      indicator_height = ((pan_bar_h - 10) / 2) * pan_intensity;
+      indicator_y = bar_center_y;
+      
+      gfx_set(0.4 + pan_intensity * 0.25, 0.35 + pan_intensity * 0.2, 0.15 + pan_intensity * 0.1);
+      gfx_rect(bar_x + 4, indicator_y, bar_w - 8, indicator_height);
+    );
+  );
+  pan_idx += 1;
+);
+
+// BPM display - left corner, aligned with pan bars
+current_bpm > 0 && slider7 > 0 ? (
+  gfx_set(0.5, 0.6, 0.5);
+  gfx_x = pan_bar_x; // Aligned with start of pan bars
+  gfx_y = pan_bar_y + pan_bar_h + 8; // Tighter spacing below pan row
+  gfx_printf("%.0f BPM", current_bpm);
+);
+
+// Generation count display - bottom right, opposite of BPM
+gfx_set(0.5, 0.6, 0.5);
+gfx_x = pan_bar_x + pan_bar_w - 50; // Right aligned with end of pan bars
+gfx_y = pan_bar_y + pan_bar_h + 8; // Same level as BPM
+// Show "STATIC" for chromatic (4) and harmonic (5) modes, generation count for others
+(slider8 == 4 || slider8 == 5) ? gfx_drawstr("STATIC") : gfx_printf("GEN %d", generation_count);
+
+last_mouse_cap = mouse_cap;
+
+@serialize
+// Save all tap states
+file_var(0, generation_count);
+i = 0;
+loop(MAX_TAPS,
+  file_var(0, tap_selected[i]);
+  file_var(0, tap_volumes[i]);  
+  file_var(0, tap_pans[i]);
+  i += 1;
+);
+
+// Save all algorithm values
+i = 0;
+loop(8 * MAX_TAPS,
+  file_var(0, algo_storage[i]);
+  i += 1;
+);

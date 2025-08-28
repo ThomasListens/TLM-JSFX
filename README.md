@@ -1,6 +1,3 @@
-<<<<<<< HEAD
-
-
 **## SEED\_DELAY**
 
 
@@ -67,7 +64,7 @@
 
 
 
-**A precision timing measurement plugin for REAPER that helps you set delays and time-based effects "by ear."**
+**A precision timing measurement plugin for REAPER that helps you set delays and time-based effects.**
 
 
 
@@ -104,5 +101,4 @@
 **2. View instant conversion to useful time formats**
 
 **3. Use measurements to dial in perfect delay times**
-
 
