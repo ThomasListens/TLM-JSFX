@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 
 
 **## SEED\_DELAY**
@@ -103,8 +104,5 @@
 **2. View instant conversion to useful time formats**
 
 **3. Use measurements to dial in perfect delay times**
-
-
-
 
 
