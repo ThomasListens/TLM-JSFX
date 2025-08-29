@@ -1,6 +1,6 @@
 desc:Seed Delay (TLM)
 author:Thomas & Claude
-version: 7.0
+version: 7.1
 
 slider1:1<1,12,1>-Delay Choice (Legacy)
 slider2:0<0,1,1>Regenerate
@@ -443,13 +443,7 @@ light_smooth += block_smooth * (light_target - light_smooth);
 input_L = dc_L.dc_block(spl0);
 input_R = dc_R.dc_block(spl1);
 
-// Apply warmth to input (pre-delay)
-warmth_smooth > 0.01 ? (
-  input_L = warmth_L.warmth_process(input_L, warmth_smooth);
-  input_R = warmth_R.warmth_process(input_R, warmth_smooth);
-);
-
-// Process delay taps
+// Process delay taps (no dirt applied to input)
 mix_L = 0;
 mix_R = 0;
 total_gain = 0;
@@ -505,23 +499,29 @@ total_gain > 0.01 ? (
   feedback_amount = 0;
 );
 
+// Apply dirt to delay mix (post-delay, pre-sunlight/moonlight)
+warmth_smooth > 0.01 ? (
+  mix_L = warmth_L.warmth_process(mix_L, warmth_smooth);
+  mix_R = warmth_R.warmth_process(mix_R, warmth_smooth);
+);
+
 // Apply sunlight/moonlight to the delay mix
 abs(light_smooth) > 0.02 ? (
   mix_L = light_L.light_process(mix_L, light_smooth);
   mix_R = light_R.light_process(mix_R, light_smooth);
 );
 
-// Feedback processing
+// Feedback processing (clean input + processed delay mix)
 fb_L = mix_L * feedback_amount;
 fb_R = mix_R * feedback_amount;
 
-// Write to delay buffer
+// Write clean input + feedback to delay buffer
 delay_buffer_L[write_pos] = input_L + fb_L;
 delay_buffer_R[write_pos] = input_R + fb_R;
 
 write_pos = (write_pos + 1) & (BUFFER_SIZE - 1);
 
-// Output mixing
+// Output mixing - clean dry signal + processed wet signal
 dry_amount = 1 - mix_smooth;
 wet_amount = mix_smooth;
 
@@ -557,7 +557,7 @@ mouse_clicked ? (
   loop(12,
     col = tap_idx % 4;
     row = floor(tap_idx / 4);
-    x = 30 + col * 85;
+    x = 60 + col * 85; // Updated to match shifted position
     y = 30 + row * 70;
     
     mouse_in_tap = mouse_x >= x && mouse_x < x + 80 && mouse_y >= y && mouse_y < y + 60;
@@ -568,11 +568,11 @@ mouse_clicked ? (
   );
 );
 
-// Volume bar interactions
+// Volume controls - shifted right to match tap grid
 vol_bar_y = 240;
+vol_bar_x = 60; // Shifted right by 30 pixels to match tap grid
+vol_bar_w = 340; // Same as tap grid (4 * 85)
 vol_bar_h = 70;
-vol_bar_w = 340;
-vol_bar_x = 30;
 
 mouse_in_vol_area = mouse_x >= vol_bar_x && mouse_x < vol_bar_x + vol_bar_w &&
                     mouse_y >= vol_bar_y && mouse_y < vol_bar_y + vol_bar_h;
@@ -617,11 +617,11 @@ mouse_down && dragging_volume && mouse_in_vol_area ? (
   tap_volumes[bar_idx] = new_vol;
 );
 
-// Pan bar interactions
+// Pan bar interactions - shifted right to match tap grid  
 pan_bar_y = 325;
+pan_bar_x = 60; // Shifted right by 30 pixels to match tap grid
+pan_bar_w = 340; // Same as tap grid (4 * 85)
 pan_bar_h = 70;
-pan_bar_w = 340;
-pan_bar_x = 30;
 
 mouse_in_pan_area = mouse_x >= pan_bar_x && mouse_x < pan_bar_x + pan_bar_w &&
                     mouse_y >= pan_bar_y && mouse_y < pan_bar_y + pan_bar_h;
@@ -722,9 +722,9 @@ gfx_set(0.2, 0.25, 0.2);
 gfx_rect(vol_bar_x, vol_bar_y, vol_bar_w, vol_bar_h, 0);
 
 gfx_set(0.5, 0.6, 0.5);
-gfx_x = 14; gfx_y = vol_bar_y + 20; gfx_drawstr("V");
-gfx_x = 14; gfx_y = vol_bar_y + 32; gfx_drawstr("O");
-gfx_x = 14; gfx_y = vol_bar_y + 44; gfx_drawstr("L");
+gfx_x = vol_bar_x - 16; gfx_y = vol_bar_y + 20; gfx_drawstr("V"); // Adjusted for new position
+gfx_x = vol_bar_x - 16; gfx_y = vol_bar_y + 32; gfx_drawstr("O");
+gfx_x = vol_bar_x - 16; gfx_y = vol_bar_y + 44; gfx_drawstr("L");
 
 vol_idx = 0;
 loop(12,
@@ -765,9 +765,9 @@ gfx_set(0.2, 0.25, 0.2);
 gfx_rect(pan_bar_x, pan_bar_y, pan_bar_w, pan_bar_h, 0);
 
 gfx_set(0.5, 0.6, 0.5);
-gfx_x = 14; gfx_y = pan_bar_y + 15; gfx_drawstr("P");
-gfx_x = 14; gfx_y = pan_bar_y + 27; gfx_drawstr("A");
-gfx_x = 14; gfx_y = pan_bar_y + 39; gfx_drawstr("N");
+gfx_x = pan_bar_x - 16; gfx_y = pan_bar_y + 15; gfx_drawstr("P"); // Adjusted for new position
+gfx_x = pan_bar_x - 16; gfx_y = pan_bar_y + 27; gfx_drawstr("A");
+gfx_x = pan_bar_x - 16; gfx_y = pan_bar_y + 39; gfx_drawstr("N");
 
 pan_idx = 0;
 loop(12,
