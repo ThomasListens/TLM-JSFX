@@ -1,6 +1,6 @@
 # TLM-JSFX
 
-A collection of JSFX plugins for REAPER. I'm just getting started but am commited long term to improving these tools and creating new fx in my pursuit to make more music. 
+My JSFX plugins for REAPER. I'm just getting started but am commited long term to improving these tools and creating new fx in my pursuit to make more music. 
 
 ## SEED_DELAY
 
