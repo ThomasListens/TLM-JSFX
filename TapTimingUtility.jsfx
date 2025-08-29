@@ -1,4 +1,4 @@
-desc: Tap Timing Utility
+desc: Tap Timing Utility (TLM)
 author: Thomas & Claude
 version: 2.1
 provides: timing_utility_midi
