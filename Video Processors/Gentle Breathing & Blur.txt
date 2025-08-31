@@ -1,0 +1,186 @@
+// Organic Breathing Zoom with Motion Blur - Video Processor
+// Creates gentle, living breathing effect with coordinated visual enhancements
+
+// === CORE BREATHING CONTROLS ===
+//@param1:breathing_speed 'Breathing Speed' 0.05 0.01 0.2 0.05 0.001
+//@param2:breathing_amount 'Breathing Depth' 0.03 0.005 0.08 0.03 0.001
+//@param3:base_zoom 'Base Zoom Level' 1.0 0.9 1.1 1.0 0.001
+
+// === MOTION BLUR SECTION ===
+//@param5:motion_blur_amount 'Motion Blur Intensity' 0.4 0 1.0 0.4 0.01
+//@param6:motion_blur_steps 'Motion Blur Quality' 4 2 8 4 1
+//@param7:blur_speed 'Motion Blur Speed' 0.1 0.02 0.3 0.1 0.01
+
+// === EDGE BLUR SECTION ===
+//@param9:edge_blur 'Edge Blur Width' 15 0 60 15 1
+//@param10:blur_fade 'Edge Fade Softness' 8 0 30 8 1
+//@param11:edge_blur_steps 'Edge Blur Quality' 3 2 6 3 1
+
+// === COLOR & BRIGHTNESS SECTION ===
+//@param13:color_shift_amount 'Color Temperature Shift' 0.1 0 0.4 0.1 0.01
+//@param14:color_shift_speed 'Color Shift Speed' 0.04 0.01 0.15 0.04 0.01
+//@param15:brightness_amount 'Brightness Variation' 0.06 0 0.2 0.06 0.01
+//@param16:brightness_speed 'Brightness Speed' 0.03 0.01 0.1 0.03 0.01
+
+input = 0;
+project_wh_valid === 0 ? input_info(input, project_w, project_h);
+
+// Initialize time counter
+!init ? (
+  time = 0;
+  init = 1;
+);
+time += 1/60; // Assuming 60fps
+
+// === ORGANIC BREATHING CALCULATION ===
+// Multiple layered sine waves create natural, non-mechanical breathing
+breathing_cycle1 = sin(time * breathing_speed * 2 * 3.14159);
+breathing_cycle2 = sin(time * breathing_speed * 1.3 * 3.14159) * 0.4;
+breathing_cycle3 = sin(time * breathing_speed * 2.7 * 3.14159) * 0.25;
+breathing_cycle4 = sin(time * breathing_speed * 0.8 * 3.14159) * 0.15;
+organic_breathing = breathing_cycle1 + breathing_cycle2 + breathing_cycle3 + breathing_cycle4;
+zoom_amount = base_zoom + (organic_breathing * breathing_amount);
+
+// === COLOR TEMPERATURE CYCLING ===
+// Independent warm/cool cycle for natural color variation
+color_cycle1 = sin(time * color_shift_speed * 2 * 3.14159);
+color_cycle2 = sin(time * color_shift_speed * 1.6 * 3.14159) * 0.7;
+color_cycle3 = sin(time * color_shift_speed * 2.8 * 3.14159) * 0.3;
+organic_color = (color_cycle1 + color_cycle2 + color_cycle3) * color_shift_amount;
+
+// === BRIGHTNESS PULSING ===
+// Subtle brightness variation independent of breathing rhythm
+bright_cycle1 = sin(time * brightness_speed * 2.2 * 3.14159);
+bright_cycle2 = sin(time * brightness_speed * 1.4 * 3.14159) * 0.6;
+bright_cycle3 = sin(time * brightness_speed * 3.2 * 3.14159) * 0.4;
+bright_cycle4 = sin(time * brightness_speed * 0.9 * 3.14159) * 0.2;
+organic_brightness = (bright_cycle1 + bright_cycle2 + bright_cycle3 + bright_cycle4) * 0.5 + 0.5; // 0-1 range
+brightness_multiplier = 1 + (organic_brightness * brightness_amount);
+
+// === SETUP DRAWING PARAMETERS ===
+// Calculate zoom destination (centered)
+dst_w = project_w * zoom_amount;
+dst_h = project_h * zoom_amount;
+dst_x = (project_w - dst_w) * 0.5;
+dst_y = (project_h - dst_h) * 0.5;
+
+// Clear framebuffer
+gfx_fillrect(0, 0, project_w, project_h);
+
+// === APPLY COLOR GRADING ===
+color_shift_amount > 0 || brightness_amount > 0 ? (
+  // Warm shift = more red/yellow, Cool shift = more blue/cyan
+  organic_color > 0 ? (
+    // Warm tones
+    gfx_r = (1 + (organic_color * 0.3)) * brightness_multiplier;  // Boost red
+    gfx_g = (1 + (organic_color * 0.15)) * brightness_multiplier; // Slight green boost
+    gfx_b = (1 - (organic_color * 0.1)) * brightness_multiplier;  // Reduce blue slightly
+  ) : (
+    // Cool tones  
+    gfx_r = (1 + (organic_color * 0.15)) * brightness_multiplier; // Reduce red slightly
+    gfx_g = (1 + (organic_color * 0.05)) * brightness_multiplier; // Minimal green change
+    gfx_b = (1 - (organic_color * 0.4)) * brightness_multiplier;  // Boost blue
+  );
+) : (
+  // No color effects - just brightness
+  gfx_r = gfx_g = gfx_b = brightness_multiplier;
+);
+
+// === MOTION BLUR CALCULATION ===
+// Independent blur timing that creates organic motion trails
+blur_cycle1 = sin(time * blur_speed * 2.3 * 3.14159);
+blur_cycle2 = sin(time * blur_speed * 1.7 * 3.14159) * 0.6;
+blur_cycle3 = sin(time * blur_speed * 3.1 * 3.14159) * 0.3;
+organic_blur_intensity = (blur_cycle1 + blur_cycle2 + blur_cycle3) * 0.5 + 0.5; // 0-1 range
+breathing_velocity = organic_blur_intensity * motion_blur_amount;
+
+// === CONTENT AREA SETUP ===
+// Reserve border area for edge blur effect
+border_width = edge_blur;
+content_x = border_width;
+content_y = border_width; 
+content_w = project_w - (border_width * 2);
+content_h = project_h - (border_width * 2);
+
+// Calculate content destination with zoom
+content_zoom_w = content_w * zoom_amount;
+content_zoom_h = content_h * zoom_amount;
+content_dst_x = content_x + (content_w - content_zoom_w) * 0.5;
+content_dst_y = content_y + (content_h - content_zoom_h) * 0.5;
+
+// === RENDER MAIN CONTENT WITH MOTION BLUR ===
+motion_blur_steps > 0 && motion_blur_amount > 0 ? (
+  // Multi-sample motion blur following breathing pattern
+  step_count = floor(motion_blur_steps);
+  blur_alpha = 1.0 / step_count;
+  
+  i = 0;
+  loop(step_count,
+    // Each step slightly offsets the zoom for motion trail
+    step_offset = (i / (step_count - 1) - 0.5) * breathing_velocity * breathing_amount;
+    step_zoom = zoom_amount + step_offset;
+    
+    step_content_w = content_w * step_zoom;
+    step_content_h = content_h * step_zoom;
+    step_content_x = content_x + (content_w - step_content_w) * 0.5;
+    step_content_y = content_y + (content_h - step_content_h) * 0.5;
+    
+    // Draw each blur step with blended opacity
+    gfx_a = blur_alpha;
+    gfx_blit(input, 0, step_content_x, step_content_y, step_content_w, step_content_h);
+    
+    i += 1;
+  );
+  
+  gfx_a = 1; // Reset alpha
+) : (
+  // No motion blur - single clean draw
+  gfx_blit(input, 0, content_dst_x, content_dst_y, content_zoom_w, content_zoom_h);
+);
+
+// === EDGE BLUR EFFECT ===
+edge_blur > 0 ? (
+  // Create soft blurred border around main content
+  blur_steps = max(2, floor(edge_blur_steps));
+  border_alpha = 1.0 / blur_steps;
+  
+  // Layer multiple slightly different scales for blur effect
+  i = 0;
+  loop(blur_steps,
+    blur_scale = 1 + (i * 0.02); // Subtle scale variation
+    blur_zoom = zoom_amount * blur_scale;
+    
+    blur_w = project_w * blur_zoom;
+    blur_h = project_h * blur_zoom; 
+    blur_x = (project_w - blur_w) * 0.5;
+    blur_y = (project_h - blur_h) * 0.5;
+    
+    // Draw blurred layer
+    gfx_a = border_alpha;
+    gfx_blit(input, 0, blur_x, blur_y, blur_w, blur_h);
+    
+    i += 1;
+  );
+  
+  // Redraw clean content over center
+  gfx_a = 1;
+  gfx_blit(input, 0, content_dst_x, content_dst_y, content_zoom_w, content_zoom_h);
+  
+  // === EDGE FADE GRADIENT ===
+  blur_fade > 0 ? (
+    fade_dist = blur_fade;
+    
+    // Fade each edge to black for smooth transition
+    // Top edge
+    gfx_gradrect(0, 0, project_w, fade_dist, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, -1/fade_dist);
+    // Bottom edge  
+    gfx_gradrect(0, project_h - fade_dist, project_w, fade_dist, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1/fade_dist);
+    // Left edge
+    gfx_gradrect(0, 0, fade_dist, project_h, 0, 0, 0, 1, 0, 0, 0, -1/fade_dist, 0, 0, 0, 0);
+    // Right edge
+    gfx_gradrect(project_w - fade_dist, 0, fade_dist, project_h, 0, 0, 0, 0, 0, 0, 0, 1/fade_dist, 0, 0, 0, 0);
+  );
+);
+
+// Reset drawing color for next frame
+gfx_r = gfx_g = gfx_b = 1;
