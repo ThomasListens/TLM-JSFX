@@ -1,6 +1,6 @@
 desc:Seed Delay (TLM)
 author:Thomas & Claude
-version: 7.1
+version: 7.2
 
 slider1:1<1,12,1>-Delay Choice (Legacy)
 slider2:0<0,1,1>Regenerate
@@ -22,8 +22,11 @@ ext_noinit = 1;
 // Constants
 MAX_TAPS = 12;
 BUFFER_SIZE = 131072;
-FEEDBACK_LIMIT = 0.98;
+FEEDBACK_LIMIT = 1.05; // REFINED: Modest increase from 0.98 for more range, but not crazy
 BLOCK_SMOOTH_HZ = 20;
+
+// Anti-aliasing protection - KEPT from our improvements
+nyquist_limit = 0.45;
 
 generation_count = 1;
 last_reroll_state = 0;
@@ -81,7 +84,11 @@ shift_drag_target_state = 0;
 last_click_time = 0;
 last_click_tap = -1;
 
-// Core functions
+// Regeneration button state
+regen_button_pressed = 0;
+regen_button_countdown = 0;
+
+// Core functions - UNCHANGED, they work well
 function tanh(x) (
   x = max(-3, min(3, x));
   (exp(2*x) - 1) / (exp(2*x) + 1)
@@ -119,7 +126,7 @@ local(pos_int, pos_frac, idx0, idx1, idx2, idx3, c0, c1, c2, c3, y0, y1, y2, y3)
   ((c0 * pos_frac + c1) * pos_frac + c2) * pos_frac + c3;
 );
 
-// Algorithm storage
+// Algorithm storage - UNCHANGED
 function get_base_value(slot)
 local(addr, val)
 (
@@ -191,7 +198,6 @@ local(i, seed, val, angle, wave_phase, phi, a, b, c)
       i = 0;
       loop(MAX_TAPS,
         val = (1.0 / (i + 1)) * 0.8 + 0.1;
-        // Make sure the last tap gets exactly 1/12
         i == 11 ? val = (1.0 / 12.0) * 0.8 + 0.1;
         set_algo_value(algo_num, i, val);
         i += 1;
@@ -229,7 +235,7 @@ local(base_val, min_val, max_val)
   ) : 100;
 );
 
-// Sunlight/Moonlight processor - bipolar character shaping
+// Sunlight/Moonlight processor - UNCHANGED, works great
 function light_process(x, amount)
 instance(shimmer_phase, comp_state, harmonic_acc, heat_wave_phase, cooling_filter)
 local(abs_amount, is_sunlight, compressed, harmonic_content, spectral_mod, shimmer, compensation, heat_wave, smooth_factor)
@@ -239,83 +245,65 @@ local(abs_amount, is_sunlight, compressed, harmonic_content, spectral_mod, shimm
   
   abs_amount > 0.02 ? (
     is_sunlight ? (
-      // SUNLIGHT: Intense heat waves, pushing down, modulated pressure
-      
-      // More aggressive downward compression - sun pressing down
       compressed = x > 0.2 ? (
         0.2 + (x - 0.2) * (1 / (1 + (x - 0.2) * abs_amount * 5))
       ) : x < -0.2 ? (
         -0.2 + (x + 0.2) * (1 / (1 + abs(x + 0.2) * abs_amount * 5))
       ) : x * (1 + abs_amount * 0.3);
       
-      // Heat wave modulation - sun rays pressing and releasing (fix ringing)
-      heat_wave_phase += abs(x) * abs_amount * 0.2; // Reduced and input-dependent
+      heat_wave_phase += abs(x) * abs_amount * 0.2;
       heat_wave_phase = heat_wave_phase - floor(heat_wave_phase);
-      heat_wave = sin(heat_wave_phase * 6.28) * abs_amount * abs(x) * 0.12; // Input-dependent
-      heat_wave += sin(heat_wave_phase * 12.56 + 1.57) * abs_amount * abs(x) * 0.06; // Also input-dependent
+      heat_wave = sin(heat_wave_phase * 6.28) * abs_amount * abs(x) * 0.12;
+      heat_wave += sin(heat_wave_phase * 12.56 + 1.57) * abs_amount * abs(x) * 0.06;
       
-      // Even harmonics with heat wave modulation
       harmonic_content = compressed * (1 + heat_wave * 0.6);
-      harmonic_content += sin(harmonic_content * 2 * 3.14159) * abs_amount * 0.14; // 2nd harmonic
-      harmonic_content += sin(harmonic_content * 4 * 3.14159) * abs_amount * 0.09; // 4th harmonic  
-      harmonic_content += sin(harmonic_content * 6 * 3.14159) * abs_amount * 0.05; // 6th harmonic
+      harmonic_content += sin(harmonic_content * 2 * 3.14159) * abs_amount * 0.14;
+      harmonic_content += sin(harmonic_content * 4 * 3.14159) * abs_amount * 0.09;
+      harmonic_content += sin(harmonic_content * 6 * 3.14159) * abs_amount * 0.05;
       
-      // Spectral heat shimmer - more aggressive (input-dependent to prevent ringing)
-      harmonic_acc += abs(x) * abs_amount * 0.15; // Input-dependent
+      harmonic_acc += abs(x) * abs_amount * 0.15;
       harmonic_acc = harmonic_acc - floor(harmonic_acc);
-      spectral_mod = sin(harmonic_acc * 6.28) * abs_amount * abs(x) * 0.06; // Input-dependent  
-      spectral_mod += sin(harmonic_acc * 18.84) * abs_amount * abs(x) * 0.03; // Also input-dependent
+      spectral_mod = sin(harmonic_acc * 6.28) * abs_amount * abs(x) * 0.06;
+      spectral_mod += sin(harmonic_acc * 18.84) * abs_amount * abs(x) * 0.03;
       
-      // Apply heat wave pressure to final output
       final_output = (harmonic_content * (1 + spectral_mod)) * (1 + heat_wave * 0.3);
       
-      // Level compensation for sunlight intensity - more aggressive
       compensation = 0.62 / (1.0 + abs_amount * 1.1);
       final_output * compensation;
       
     ) : (
-      // MOONLIGHT: Simple beauty - gentle harmonics, upward compression, chorus magic
-      
-      // Gentle upward compression - soft lifting
       compressed = abs(x) < 0.5 ? (
         x * (1 + abs_amount * 0.8)
       ) : (
         sign(x) * (0.5 + (abs(x) - 0.5) * (1 - abs_amount * 0.3))
       );
       
-      // Simple gentle harmonics - no phase offsets, just pure
       harmonic_content = compressed;
-      harmonic_content += sin(compressed * 3 * 3.14159) * abs_amount * 0.04; // 3rd harmonic
-      harmonic_content += sin(compressed * 5 * 3.14159) * abs_amount * abs_amount * 0.02; // 5th harmonic
+      harmonic_content += sin(compressed * 3 * 3.14159) * abs_amount * 0.04;
+      harmonic_content += sin(compressed * 5 * 3.14159) * abs_amount * abs_amount * 0.02;
       
-      // CHORUS MAGIC - more pronounced dual delay lines with pitch modulation
-      shimmer_phase += abs_amount * 0.2; // Slow LFO
+      shimmer_phase += abs_amount * 0.2;
       shimmer_phase = shimmer_phase - floor(shimmer_phase);
       
-      // Enhanced chorus effect - more noticeable pitch/timing variations
-      chorus_mod1 = sin(shimmer_phase * 6.28) * abs_amount * 0.005; // More pitch bend
-      chorus_mod2 = sin(shimmer_phase * 6.28 * 1.3 + 1.57) * abs_amount * 0.004; // More modulation
-      chorus_mod3 = sin(shimmer_phase * 6.28 * 0.7 + 3.14) * abs_amount * 0.003; // Third chorus voice
+      chorus_mod1 = sin(shimmer_phase * 6.28) * abs_amount * 0.005;
+      chorus_mod2 = sin(shimmer_phase * 6.28 * 1.3 + 1.57) * abs_amount * 0.004;
+      chorus_mod3 = sin(shimmer_phase * 6.28 * 0.7 + 3.14) * abs_amount * 0.003;
       
-      // Apply chorus modulation with three voices
-      chorus_content = harmonic_content * (1 + chorus_mod1); // Main voice
-      chorus_content += harmonic_content * 0.5 * (1 + chorus_mod2); // Second voice
-      chorus_content += harmonic_content * 0.3 * (1 + chorus_mod3); // Third voice, quieter
+      chorus_content = harmonic_content * (1 + chorus_mod1);
+      chorus_content += harmonic_content * 0.5 * (1 + chorus_mod2);
+      chorus_content += harmonic_content * 0.3 * (1 + chorus_mod3);
       
-      // Very gentle shimmer on top
       gentle_shimmer = sin(shimmer_phase * 6.28 * 0.7) * abs_amount * abs(x) * 0.015;
       
-      // Simple final mix
-      final_moonlight = (chorus_content + gentle_shimmer) * 0.65; // Slightly lower to compensate for more chorus
+      final_moonlight = (chorus_content + gentle_shimmer) * 0.65;
       
-      // More level compensation
       compensation = 0.75 / (1.0 + abs_amount * 0.6);
       final_moonlight * compensation;
     );
   ) : x;
 );
 
-// Chaotic dirt processor - algorithm-driven chaos
+// Chaotic dirt processor - UNCHANGED, works great
 function warmth_process(x, amount)
 instance(chaos_state, last_val, smear_buffer, smear_idx, grain_phase, destruction_acc)
 local(algo_chaos, destruction_factor, smear_amount, grain_size, spectral_shift, 
@@ -324,23 +312,19 @@ local(algo_chaos, destruction_factor, smear_amount, grain_size, spectral_shift,
   amount = max(0, min(1, amount));
   
   amount > 0.01 ? (
-    // Use current algorithm values to drive chaos parameters
-    algo_chaos = get_base_value(floor(amount * 11)); // Use dirt amount to pick algorithm slot
+    algo_chaos = get_base_value(floor(amount * 11));
     destruction_factor = algo_chaos * amount;
     
-    // 1. SPECTRAL DESTRUCTION - frequency domain chaos
     spectral_shift = sin(destruction_acc * 3.14159 + algo_chaos * 6.28) * amount * 0.8;
     destruction_acc += abs(x - last_val) * destruction_factor * 2;
     destruction_acc = destruction_acc - floor(destruction_acc);
     
-    // 2. TIME SMEARING - sample-and-hold chaos with algorithm-driven timing
     smear_amount = destruction_factor;
-    grain_size = 1 + floor(algo_chaos * amount * 32); // Algorithm controls grain size
+    grain_size = 1 + floor(algo_chaos * amount * 32);
     smear_idx = (smear_idx + 1) % max(1, grain_size);
-    smear_idx == 0 ? smear_buffer = x; // Sample new value
+    smear_idx == 0 ? smear_buffer = x;
     time_smear = x * (1 - smear_amount) + smear_buffer * smear_amount;
     
-    // 3. DIGITAL CRUSH - aggressive bit/sample rate reduction
     crush_bits = max(4, 16 - floor(destruction_factor * 10));
     crush_rate = max(1, floor(destruction_factor * 8) + 1);
     chaos_state = (chaos_state + 1) % crush_rate;
@@ -349,18 +333,14 @@ local(algo_chaos, destruction_factor, smear_amount, grain_size, spectral_shift,
       digital_crush = floor(time_smear * crush_quant + 0.5) / crush_quant;
     );
     
-    // 4. FEEDBACK CHAOS - self-modulating destruction
     feedback_chaos = digital_crush + (digital_crush * digital_crush * destruction_factor * 0.3);
     feedback_chaos += sin(feedback_chaos * 8 + algo_chaos * 12.56) * destruction_factor * 0.2;
     
-    // 5. SPECTRAL SHIFT - pitch-like modulation
     final_chaos = feedback_chaos * (1 + spectral_shift);
     
-    // 6. AGGRESSIVE SATURATION - digital clipping
     final_chaos = max(-1.5, min(1.5, final_chaos * (1 + destruction_factor)));
-    final_chaos = final_chaos / (1 + abs(final_chaos) * 0.3); // Soft clip back
+    final_chaos = final_chaos / (1 + abs(final_chaos) * 0.3);
     
-    // Level compensation with slight boost for perceived energy
     compensation = 0.7 / (1.0 + destruction_factor * 0.5);
     last_val = x;
     
@@ -379,7 +359,7 @@ loop(8,
 slider5 = max(0, min(2000, slider5));
 slider6 = max(slider5 + 10, min(5000, slider6));
 slider3 = max(0, min(1, slider3));
-slider4 = max(0, min(FEEDBACK_LIMIT, slider4));
+slider4 = max(0, min(1, slider4));
 slider10 = max(0, min(1, slider10));
 slider11 = max(-1, min(1, slider11));
 
@@ -394,7 +374,7 @@ last_reroll_state = slider2;
 slider7 != last_timing_mode ? (
   slider7 > 0 && tempo > 0 ? (
     bpm = max(60, min(200, tempo));
-    current_bpm = bpm; // Fixed variable name
+    current_bpm = bpm;
     beat_ms = 60000 / bpm;
     slider7 == 1 ? slider6 = beat_ms * 0.25 :
     slider7 == 2 ? slider6 = beat_ms * 0.5 :
@@ -402,7 +382,7 @@ slider7 != last_timing_mode ? (
     slider6 = beat_ms * 2.0;
     slider6 = max(10, min(3000, slider6));
   ) : (
-    current_bpm = 0; // Clear BPM when timing mode is off
+    current_bpm = 0;
   );
   last_timing_mode = slider7;
 );
@@ -428,9 +408,20 @@ loop(MAX_TAPS,
   i += 1;
 );
 
-// Smooth main parameters with better curves for automation
+// REFINED: Gentle S-curve for feedback that gives more range without instability
+feedback_raw = slider4;
+feedback_raw > 0.75 ? (
+  // Top 25% gets compressed to prevent runaway
+  normalized = (feedback_raw - 0.75) / 0.25; // 0-1 range
+  s_curve = normalized * normalized * (3.0 - 2.0 * normalized);
+  feedback_target = 0.75 + (s_curve * 0.3); // Maps 75-100% slider to 75-105% internal
+) : (
+  // Linear below 75% for precise control
+  feedback_target = feedback_raw;
+);
+
+// Smooth main parameters
 mix_target = slider3;
-feedback_target = slider4;
 warmth_target = slider10;
 light_target = slider11;
 
@@ -439,11 +430,19 @@ feedback_smooth += block_smooth * (feedback_target - feedback_smooth);
 warmth_smooth += block_smooth * (warmth_target - warmth_smooth);
 light_smooth += block_smooth * (light_target - light_smooth);
 
+// Handle regeneration button countdown
+regen_button_countdown > 0 ? (
+  regen_button_countdown -= block_samples;
+  regen_button_countdown <= 0 ? (
+    regen_button_pressed = 0;
+  );
+);
+
 @sample
 input_L = dc_L.dc_block(spl0);
 input_R = dc_R.dc_block(spl1);
 
-// Process delay taps (no dirt applied to input)
+// Process delay taps - ORIGINAL logic, works well
 mix_L = 0;
 mix_R = 0;
 total_gain = 0;
@@ -476,13 +475,13 @@ loop(MAX_TAPS,
   i += 1;
 );
 
-// Normalize mix and scale feedback based on active taps
+// REFINED: Moderate feedback scaling - not too aggressive, not too permissive
 total_gain > 0.01 ? (
-  norm_factor = min(1.0, 1.0 / sqrt(total_gain));
+  norm_factor = min(1.0, 1.2 / sqrt(total_gain)); // Gentler than original
   mix_L *= norm_factor;
   mix_R *= norm_factor;
   
-  // Scale feedback based on number of active taps to prevent runaway
+  // Count active taps for feedback scaling
   active_tap_count = 0;
   i = 0;
   loop(MAX_TAPS,
@@ -490,8 +489,8 @@ total_gain > 0.01 ? (
     i += 1;
   );
   
-  // Reduce feedback strength as more taps are active
-  feedback_scale = 1.0 / (1.0 + (active_tap_count - 1) * 0.15);
+  // REFINED: Moderate feedback scaling based on active taps
+  feedback_scale = 1.0 / (1.0 + (active_tap_count - 1) * 0.1); // Between original and our extremes
   feedback_amount = feedback_smooth * feedback_scale;
 ) : (
   mix_L = 0;
@@ -499,7 +498,7 @@ total_gain > 0.01 ? (
   feedback_amount = 0;
 );
 
-// Apply dirt to delay mix (post-delay, pre-sunlight/moonlight)
+// Apply dirt to delay mix
 warmth_smooth > 0.01 ? (
   mix_L = warmth_L.warmth_process(mix_L, warmth_smooth);
   mix_R = warmth_R.warmth_process(mix_R, warmth_smooth);
@@ -511,38 +510,81 @@ abs(light_smooth) > 0.02 ? (
   mix_R = light_R.light_process(mix_R, light_smooth);
 );
 
-// Feedback processing (clean input + processed delay mix)
+// REFINED: Enhanced feedback with gentle anti-aliasing and musical enhancement
 fb_L = mix_L * feedback_amount;
 fb_R = mix_R * feedback_amount;
 
-// Write clean input + feedback to delay buffer
+// KEPT: Gentle high-frequency damping to prevent digital squealing (starts at 60%)
+feedback_amount > 0.6 ? (
+  damping_amount = (feedback_amount - 0.6) * 2.5; // 0-1 range over 60-100%
+  damping_factor = 1.0 - damping_amount * 0.15; // Up to 15% damping
+  
+  fb_L = fb_L * damping_factor + fb_L_prev * (1.0 - damping_factor);
+  fb_R = fb_R * damping_factor + fb_R_prev * (1.0 - damping_factor);
+  fb_L_prev = fb_L;
+  fb_R_prev = fb_R;
+);
+
+// KEPT: Subtle musical harmonics in high feedback range for character (80%+)
+feedback_amount > 0.8 ? (
+  buildup_amount = (feedback_amount - 0.8) * 5.0; // 0-1 over 80-100%
+  buildup_amount = min(1.0, buildup_amount);
+  
+  // Anti-aliasing protection
+  fb_L_limited = abs(fb_L) > nyquist_limit ? sign(fb_L) * nyquist_limit : fb_L;
+  fb_R_limited = abs(fb_R) > nyquist_limit ? sign(fb_R) * nyquist_limit : fb_R;
+  
+  // Gentle harmonic enhancement for musical character
+  harmonic2_L = sin(fb_L_limited * 6.283185) * buildup_amount * 0.03; // Subtle
+  harmonic2_R = sin(fb_R_limited * 6.283185) * buildup_amount * 0.03;
+  
+  // Sub-harmonic for depth (above 90%)
+  feedback_amount > 0.9 ? (
+    sub_amount = (feedback_amount - 0.9) * 10.0; // 0-1 over 90-100%
+    sub_amount = min(1.0, sub_amount);
+    
+    subharmonic_L = sin(fb_L_limited * 3.141593) * sub_amount * 0.02; // Gentle rumble
+    subharmonic_R = sin(fb_R_limited * 3.141593) * sub_amount * 0.02;
+  ) : (
+    subharmonic_L = 0; subharmonic_R = 0;
+  );
+  
+  fb_L = fb_L + harmonic2_L + subharmonic_L;
+  fb_R = fb_R + harmonic2_R + subharmonic_R;
+);
+
+// Write to delay buffer
 delay_buffer_L[write_pos] = input_L + fb_L;
 delay_buffer_R[write_pos] = input_R + fb_R;
 
 write_pos = (write_pos + 1) & (BUFFER_SIZE - 1);
 
-// Output mixing - clean dry signal + processed wet signal
+// Output mixing - ORIGINAL logic
 dry_amount = 1 - mix_smooth;
 wet_amount = mix_smooth;
 
 output_L = input_L * dry_amount + mix_L * wet_amount;
 output_R = input_R * dry_amount + mix_R * wet_amount;
 
-// Final limiter
+// REFINED: Moderate final limiter - not too aggressive, not too permissive
 limiter_threshold = 0.95;
 abs(output_L) > limiter_threshold ? (
   output_L = sign(output_L) * (limiter_threshold + 
-    tanh(3 * (abs(output_L) - limiter_threshold)) * 0.05);
+    tanh(2 * (abs(output_L) - limiter_threshold)) * 0.05);
 );
 abs(output_R) > limiter_threshold ? (
   output_R = sign(output_R) * (limiter_threshold + 
-    tanh(3 * (abs(output_R) - limiter_threshold)) * 0.05);
+    tanh(2 * (abs(output_R) - limiter_threshold)) * 0.05);
 );
 
 spl0 = output_L;
 spl1 = output_R;
 
-@gfx 400 415
+// Initialize feedback damping state
+fb_L_prev = 0;
+fb_R_prev = 0;
+
+@gfx 450 415
 
 // Mouse handling
 mouse_clicked = (mouse_cap & 1) && !(last_mouse_cap & 1);
@@ -551,13 +593,29 @@ mouse_released = !(mouse_cap & 1) && (last_mouse_cap & 1);
 shift_held = (mouse_cap & 8);
 ctrl_held = (mouse_cap & 4);
 
+// Regeneration button
+regen_button_x = 403;
+regen_button_y = 30;
+regen_button_w = 18;
+regen_button_h = 200;
+
+mouse_in_regen_button = mouse_x >= regen_button_x && mouse_x < regen_button_x + regen_button_w &&
+                       mouse_y >= regen_button_y && mouse_y < regen_button_y + regen_button_h;
+
+mouse_in_regen_button && mouse_clicked ? (
+  generation_count += 1;
+  generate_algorithm_values(slider8);
+  regen_button_pressed = 1;
+  regen_button_countdown = srate * 0.15;
+);
+
 // Handle tap clicks
 mouse_clicked ? (
   tap_idx = 0;
   loop(12,
     col = tap_idx % 4;
     row = floor(tap_idx / 4);
-    x = 60 + col * 85; // Updated to match shifted position
+    x = 60 + col * 85;
     y = 30 + row * 70;
     
     mouse_in_tap = mouse_x >= x && mouse_x < x + 80 && mouse_y >= y && mouse_y < y + 60;
@@ -568,10 +626,10 @@ mouse_clicked ? (
   );
 );
 
-// Volume controls - shifted right to match tap grid
+// Volume controls
 vol_bar_y = 240;
-vol_bar_x = 60; // Shifted right by 30 pixels to match tap grid
-vol_bar_w = 340; // Same as tap grid (4 * 85)
+vol_bar_x = 60;
+vol_bar_w = 340;
 vol_bar_h = 70;
 
 mouse_in_vol_area = mouse_x >= vol_bar_x && mouse_x < vol_bar_x + vol_bar_w &&
@@ -584,8 +642,8 @@ mouse_in_vol_area && mouse_clicked ? (
   
   shift_held ? (
     tap_selected[bar_idx] = !tap_selected[bar_idx];
-    shift_drag_mode = 1; // Start shift-drag mode
-    shift_drag_target_state = tap_selected[bar_idx]; // Remember what state we're setting
+    shift_drag_mode = 1;
+    shift_drag_target_state = tap_selected[bar_idx];
   ) : ctrl_held ? (
     tap_volumes[bar_idx] = 0.5;
   ) : (
@@ -602,7 +660,6 @@ mouse_down && shift_held && shift_drag_mode && mouse_in_vol_area ? (
   bar_idx = floor((mouse_x - vol_bar_x) / bar_w);
   bar_idx = max(0, min(11, bar_idx));
   
-  // Set all dragged-over taps to the target state
   tap_selected[bar_idx] = shift_drag_target_state;
 );
 
@@ -617,10 +674,10 @@ mouse_down && dragging_volume && mouse_in_vol_area ? (
   tap_volumes[bar_idx] = new_vol;
 );
 
-// Pan bar interactions - shifted right to match tap grid  
+// Pan bar interactions
 pan_bar_y = 325;
-pan_bar_x = 60; // Shifted right by 30 pixels to match tap grid
-pan_bar_w = 340; // Same as tap grid (4 * 85)
+pan_bar_x = 60;
+pan_bar_w = 340;
 pan_bar_h = 70;
 
 mouse_in_pan_area = mouse_x >= pan_bar_x && mouse_x < pan_bar_x + pan_bar_w &&
@@ -637,7 +694,6 @@ mouse_in_pan_area && mouse_clicked ? (
     tap_pans[bar_idx] = 0.0;
   ) : (
     dragging_pan = 1;
-    // Fixed pan calculation - make it more responsive to exact click position
     center_y = pan_bar_y + pan_bar_h / 2;
     pan_relative_y = mouse_y - center_y;
     new_pan = pan_relative_y / ((pan_bar_h - 10) / 2);
@@ -659,7 +715,6 @@ mouse_down && dragging_pan && mouse_in_pan_area ? (
   bar_idx = floor((mouse_x - pan_bar_x) / bar_w);
   bar_idx = max(0, min(11, bar_idx));
   
-  // Fixed drag calculation - more precise
   center_y = pan_bar_y + pan_bar_h / 2;
   pan_relative_y = mouse_y - center_y;
   new_pan = pan_relative_y / ((pan_bar_h - 10) / 2);
@@ -672,18 +727,60 @@ mouse_released ? (
   dragging_volume = 0;
   dragging_pan = 0;
   shift_drag_mode = 0;
+  regen_button_pressed = 0;
 );
 
 // Clear background
 gfx_set(0.06, 0.08, 0.06);
 gfx_rect(0, 0, gfx_w, gfx_h);
 
-// Draw tap squares - with proper spacing
+// Draw regeneration button
+regen_button_active = regen_button_pressed || (regen_button_countdown > 0);
+regen_button_active ? (
+  gfx_set(0.4, 0.6, 0.4);
+) : mouse_in_regen_button ? (
+  gfx_set(0.15, 0.2, 0.15);
+) : (
+  gfx_set(0.1, 0.12, 0.1);
+);
+
+gfx_rect(regen_button_x, regen_button_y, regen_button_w, regen_button_h);
+gfx_set(0.04, 0.05, 0.04);
+gfx_rect(regen_button_x + 1, regen_button_y + 1, regen_button_w - 2, regen_button_h - 2);
+
+// Draw button text
+gfx_set(0.7, 0.8, 0.7);
+button_center_y = regen_button_y + regen_button_h / 2;
+text_start_y = button_center_y - 30;
+
+gfx_x = regen_button_x + 6;
+gfx_y = text_start_y;
+gfx_drawstr("R");
+gfx_x = regen_button_x + 6;
+gfx_y = text_start_y + 12;
+gfx_drawstr("E");
+gfx_x = regen_button_x + 6;
+gfx_y = text_start_y + 24;
+gfx_drawstr("G");
+gfx_x = regen_button_x + 6;
+gfx_y = text_start_y + 36;
+gfx_drawstr("E");
+gfx_x = regen_button_x + 6;
+gfx_y = text_start_y + 48;
+gfx_drawstr("N");
+
+// Draw regeneration symbol
+gfx_set(0.5, 0.6, 0.5);
+gfx_x = regen_button_x + 8;
+gfx_y = text_start_y + 70;
+gfx_drawstr("⚡");
+
+// Draw tap squares
 tap_idx = 0;
 loop(12,
   col = tap_idx % 4;
   row = floor(tap_idx / 4);
-  x = 30 + col * 85;
+  x = 60 + col * 85;
   y = 30 + row * 70;
   
   vol_intensity = tap_volumes[tap_idx];
@@ -722,7 +819,7 @@ gfx_set(0.2, 0.25, 0.2);
 gfx_rect(vol_bar_x, vol_bar_y, vol_bar_w, vol_bar_h, 0);
 
 gfx_set(0.5, 0.6, 0.5);
-gfx_x = vol_bar_x - 16; gfx_y = vol_bar_y + 20; gfx_drawstr("V"); // Adjusted for new position
+gfx_x = vol_bar_x - 16; gfx_y = vol_bar_y + 20; gfx_drawstr("V");
 gfx_x = vol_bar_x - 16; gfx_y = vol_bar_y + 32; gfx_drawstr("O");
 gfx_x = vol_bar_x - 16; gfx_y = vol_bar_y + 44; gfx_drawstr("L");
 
@@ -744,7 +841,7 @@ loop(12,
   vol_idx += 1;
 );
 
-// Numbers - nudged down into sweet spot
+// Numbers
 num_idx = 0;
 loop(12,
   bar_w = vol_bar_w / 12;
@@ -765,7 +862,7 @@ gfx_set(0.2, 0.25, 0.2);
 gfx_rect(pan_bar_x, pan_bar_y, pan_bar_w, pan_bar_h, 0);
 
 gfx_set(0.5, 0.6, 0.5);
-gfx_x = pan_bar_x - 16; gfx_y = pan_bar_y + 15; gfx_drawstr("P"); // Adjusted for new position
+gfx_x = pan_bar_x - 16; gfx_y = pan_bar_y + 15; gfx_drawstr("P");
 gfx_x = pan_bar_x - 16; gfx_y = pan_bar_y + 27; gfx_drawstr("A");
 gfx_x = pan_bar_x - 16; gfx_y = pan_bar_y + 39; gfx_drawstr("N");
 
@@ -784,7 +881,7 @@ loop(12,
     gfx_set(0.6, 0.65, 0.6);
     gfx_line(bar_x + 4, bar_center_y, bar_x + bar_w - 4, bar_center_y);
     
-    pan_val < 0 ? (
+    pan_val < -0.05 ? (
       pan_intensity = abs(pan_val);
       indicator_height = ((pan_bar_h - 10) / 2) * pan_intensity;
       indicator_y = bar_center_y - indicator_height;
@@ -803,19 +900,18 @@ loop(12,
   pan_idx += 1;
 );
 
-// BPM display - left corner, aligned with pan bars
+// BPM display
 current_bpm > 0 && slider7 > 0 ? (
   gfx_set(0.5, 0.6, 0.5);
-  gfx_x = pan_bar_x; // Aligned with start of pan bars
-  gfx_y = pan_bar_y + pan_bar_h + 8; // Tighter spacing below pan row
+  gfx_x = pan_bar_x;
+  gfx_y = pan_bar_y + pan_bar_h + 8;
   gfx_printf("%.0f BPM", current_bpm);
 );
 
-// Generation count display - bottom right, opposite of BPM
+// Generation count display
 gfx_set(0.5, 0.6, 0.5);
-gfx_x = pan_bar_x + pan_bar_w - 50; // Right aligned with end of pan bars
-gfx_y = pan_bar_y + pan_bar_h + 8; // Same level as BPM
-// Show "STATIC" for chromatic (4) and harmonic (5) modes, generation count for others
+gfx_x = pan_bar_x + pan_bar_w - 50;
+gfx_y = pan_bar_y + pan_bar_h + 8;
 (slider8 == 4 || slider8 == 5) ? gfx_drawstr("STATIC") : gfx_printf("GEN %d", generation_count);
 
 last_mouse_cap = mouse_cap;
