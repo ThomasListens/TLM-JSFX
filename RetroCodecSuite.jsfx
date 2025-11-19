@@ -1,0 +1,872 @@
+desc:Retro Codec Suite v7.1 - Authentic Edition
+tags:n64 psx vadpcm adpcm nintendo playstation retro compression
+version:7.1
+author:Thomas
+
+// HIDDEN SLIDERS
+slider1:sample_rate_idx=3<0,4,1>-Sample Rate Index
+slider2:bit_depth_idx=2<0,3,1>-Bit Depth Index  
+slider3:drive=0<0,1,0.001>-Drive Amount
+slider4:output_gain=0.8333<0,1,0.001>-Output Level
+slider5:dry_wet_mix=1.0<0,1,0.001>-Mix
+slider6:artifact_amount=0<0,1,0.001>-Artifact Amount
+slider7:codec_type=0<0,3,1>-Codec Type
+slider8:lofi_filter=1<0,1,1>-Lo-Fi Filter
+slider9:aa_filter=1<0,1,1>-Anti-Aliasing Filter
+
+@init
+
+// Sample rates
+sample_rates = 1000;
+sample_rates[0] = 11025;
+sample_rates[1] = 16000;
+sample_rates[2] = 22050;
+sample_rates[3] = 32000;
+sample_rates[4] = 44100;
+
+// Bit depths
+bit_depths = 1100;
+bit_depths[0] = 4;
+bit_depths[1] = 8;
+bit_depths[2] = 16;
+bit_depths[3] = 24;
+
+// String labels
+sr_label_0 = 1500;
+sr_label_1 = 1510;
+sr_label_2 = 1520;
+sr_label_3 = 1530;
+sr_label_4 = 1540;
+
+strcpy(#sr_label_0, "11kHz");
+strcpy(#sr_label_1, "16kHz");
+strcpy(#sr_label_2, "22kHz");
+strcpy(#sr_label_3, "32kHz");
+strcpy(#sr_label_4, "44kHz");
+
+bit_label_0 = 1600;
+bit_label_1 = 1610;
+bit_label_2 = 1620;
+bit_label_3 = 1630;
+
+strcpy(#bit_label_0, "4-bit");
+strcpy(#bit_label_1, "8-bit");
+strcpy(#bit_label_2, "16-bit");
+strcpy(#bit_label_3, "24-bit");
+
+// Default values
+DEFAULT_SAMPLE_RATE = 0.75;  // 32kHz
+DEFAULT_BIT_DEPTH = 0.6667;  // 16-bit
+DEFAULT_DRIVE = 0;
+DEFAULT_OUTPUT = 0.8333;     // 0dB (at center of -24dB to +12dB range)
+DEFAULT_MIX = 1.0;          // 100%
+DEFAULT_ARTIFACTS = 0;
+DEFAULT_CODEC = 0;          // VADPCM
+DEFAULT_LOFI = 1;           // ON
+DEFAULT_AA = 1;             // ON
+
+// GUI State
+gui_sample_rate = DEFAULT_SAMPLE_RATE;
+gui_bit_depth = DEFAULT_BIT_DEPTH;
+gui_artifacts = DEFAULT_ARTIFACTS;
+gui_drive = DEFAULT_DRIVE;
+gui_output = DEFAULT_OUTPUT;
+gui_mix = DEFAULT_MIX;
+gui_codec = DEFAULT_CODEC;
+gui_lofi = DEFAULT_LOFI;
+gui_aa = DEFAULT_AA;
+
+// Smoothing
+smooth_drive = 0;
+smooth_artifacts = 0;
+smooth_mix = 1.0;
+smooth_output = 0.8333;
+
+// Colors
+BG_COLOR = 0.08;
+FG_COLOR = 0.9;
+ACCENT_R = 0.3; ACCENT_G = 0.5; ACCENT_B = 0.9;
+TRACK_COLOR = 0.15;
+NOTCH_COLOR = 0.25;
+FINE_COLOR_R = 1.0; FINE_COLOR_G = 0.6; FINE_COLOR_B = 0.0;
+
+// Layout
+MARGIN = 25;
+SLIDER_HEIGHT = 10;
+SLIDER_WIDTH = 320;
+DROPDOWN_HEIGHT = 32;
+DROPDOWN_WIDTH = 280;
+
+// DSP Memory
+predictor_L = 0;
+predictor_R = 1;
+step_index_L = 4;
+step_index_R = 5;
+psx_s1_L = 6;
+psx_s2_L = 7;
+psx_s1_R = 8;
+psx_s2_R = 9;
+lpf_a0_L = 10;
+lpf_a0_R = 13;
+aa_lpf_L = 20;
+aa_lpf_R = 21;
+
+// Tables
+vadpcm_coef1 = 800;
+psx_filter = 850;
+
+// Mouse state
+dropdown_open = 0;
+dropdown_hover = -1;
+mouse_was_down = 0;
+dragging_slider = -1;
+last_click_time = 0;
+last_click_slider = -1;
+DOUBLE_CLICK_TIME = 0.3;  // 300ms for double-click
+
+// Helper functions
+function db_to_linear(db) ( exp(db * 0.11512925); );
+
+function get_sr_label(idx)
+(
+  idx == 0 ? #sr_label_0 :
+  idx == 1 ? #sr_label_1 :
+  idx == 2 ? #sr_label_2 :
+  idx == 3 ? #sr_label_3 :
+  #sr_label_4;
+);
+
+function get_bit_label(idx)
+(
+  idx == 0 ? #bit_label_0 :
+  idx == 1 ? #bit_label_1 :
+  idx == 2 ? #bit_label_2 :
+  #bit_label_3;
+);
+
+function tanh_approx(x)
+local(x2)
+(
+  x2 = x * x;
+  x * (27 + x2) / (27 + 9 * x2);
+);
+
+// Initialize tables
+function init_tables()
+(
+  vadpcm_coef1[0] = 0;
+  vadpcm_coef1[1] = 0.9;
+  vadpcm_coef1[2] = 1.8;
+  vadpcm_coef1[3] = 1.4;
+  
+  psx_filter[0] = 0;       psx_filter[1] = 0;
+  psx_filter[2] = 0.9375;  psx_filter[3] = 0;
+  psx_filter[4] = 1.796875; psx_filter[5] = -0.8125;
+  psx_filter[6] = 1.53125; psx_filter[7] = -0.859375;
+  psx_filter[8] = 1.90625; psx_filter[9] = -0.9375;
+);
+
+init_tables();
+
+// State
+hold_L = 0;
+hold_R = 0;
+src_phase = 0;
+
+// ============================================================================
+// DSP FUNCTIONS
+// ============================================================================
+
+function n64_clip(x) ( x > 1 ? 1 : x < -1 ? -1 : x; );
+
+function soft_saturate(x, amount)
+local(driven, wet)
+(
+  driven = x * (1 + amount * 3);
+  wet = tanh_approx(driven);
+  wet = wet / (1 + amount * 0.5);
+  x * (1 - amount) + wet * amount;
+);
+
+function quantize_bits(input, bit_idx)
+local(bits, levels, quant)
+(
+  bits = bit_depths[bit_idx];
+  levels = pow(2, bits);
+  quant = floor(input * levels * 0.5 + 0.5) / (levels * 0.5);
+  n64_clip(quant);
+);
+
+function pcm4_process(input, is_right)
+local(quantized)
+(
+  input += (rand() - 0.5) * smooth_artifacts * 0.05;
+  quantized = floor(input * 8 + 0.5) / 8;
+  n64_clip(quantized);
+);
+
+function ima_process(input, is_right)
+local(pred, step_idx, diff, nibble, delta, step_size, quantized)
+(
+  pred = is_right ? predictor_R : predictor_L;
+  step_idx = is_right ? step_index_R : step_index_L;
+  
+  // Variable step size based on artifacts - more artifacts = coarser quantization
+  step_size = 2000 + smooth_artifacts * 8000;
+  
+  // Calculate difference and quantize
+  diff = (input - pred) * 32768;
+  nibble = min(7, max(-8, floor(diff / step_size)));
+  
+  // Reconstruct with quantization error
+  delta = nibble * step_size;
+  pred += delta / 32768;
+  
+  // Add dithering noise at higher artifact levels
+  pred += (rand() - 0.5) * smooth_artifacts * 0.02;
+  
+  pred = n64_clip(pred);
+  
+  is_right ? (
+    predictor_R = pred;
+    step_index_R = max(0, min(88, step_idx + abs(nibble)));
+  ) : (
+    predictor_L = pred;
+    step_index_L = max(0, min(88, step_idx + abs(nibble)));
+  );
+  
+  pred;
+);
+
+function vadpcm_process(input, is_right)
+local(pred, coef, prediction, quantized, noise, output, mix_pred, mix_in)
+(
+  pred = is_right ? predictor_R : predictor_L;
+  
+  // Coefficient interpolation - max 0.85 for stability
+  coef = smooth_artifacts * 0.85;
+  
+  // Add quantization noise based on artifact amount
+  noise = (rand() - 0.5) * smooth_artifacts * 0.03;
+  
+  // Create prediction from previous sample
+  prediction = pred * coef;
+  
+  // Quantize the input more aggressively as artifacts increase
+  quantized = input;
+  smooth_artifacts > 0.01 ? (
+    quantized = floor(input * (64 / (1 + smooth_artifacts * 7)) + 0.5) / (64 / (1 + smooth_artifacts * 7));
+  );
+  
+  // Mix prediction with quantized input - normalized blend
+  mix_pred = smooth_artifacts * 0.8;
+  mix_in = 1 - mix_pred;
+  output = (prediction * mix_pred + quantized * mix_in) * (1 - smooth_artifacts * 0.3);
+  output += noise;
+  output = n64_clip(output);
+  
+  // Update predictor
+  is_right ? predictor_R = output : predictor_L = output;
+  
+  output;
+);
+
+function psx_adpcm_process(input, is_right)
+local(s1, s2, k0, k1, sample, nibble, quant_levels, gain_norm)
+(
+  is_right ? (
+    s1 = psx_s1_R;
+    s2 = psx_s2_R;
+  ) : (
+    s1 = psx_s1_L;
+    s2 = psx_s2_L;
+  );
+  
+  // Lower, safer coefficients
+  k0 = smooth_artifacts * 0.6;
+  k1 = -smooth_artifacts * 0.3;
+  
+  // Quantization gets more aggressive with artifacts
+  quant_levels = 8 / (1 + smooth_artifacts * 6);
+  nibble = floor(input * quant_levels + 0.5);
+  sample = nibble / quant_levels;
+  
+  // Apply prediction filter with normalization safeguard
+  gain_norm = 1.0 / max(0.5, abs(k0) + abs(k1) + 1.0);
+  sample = (s1 * k0 + s2 * k1 + sample) * gain_norm;
+  
+  // Add some noise at high artifact settings
+  sample += (rand() - 0.5) * smooth_artifacts * smooth_artifacts * 0.02;
+  
+  sample = n64_clip(sample);
+  
+  is_right ? (
+    psx_s2_R = s1;
+    psx_s1_R = sample;
+  ) : (
+    psx_s2_L = s1;
+    psx_s1_L = sample;
+  );
+  
+  sample;
+);
+
+function aa_filter(input, is_right, cutoff)
+local(coef, filtered)
+(
+  coef = exp(-2 * $pi * cutoff / srate);
+  is_right ? (
+    aa_lpf_R = aa_lpf_R * coef + input * (1 - coef);
+    filtered = aa_lpf_R;
+  ) : (
+    aa_lpf_L = aa_lpf_L * coef + input * (1 - coef);
+    filtered = aa_lpf_L;
+  );
+  filtered;
+);
+
+function lofi_filter(input, is_right, cutoff)
+local(coef, filtered)
+(
+  coef = exp(-2 * $pi * cutoff / srate);
+  is_right ? (
+    lpf_a0_R = lpf_a0_R * coef + input * (1 - coef);
+    filtered = lpf_a0_R;
+  ) : (
+    lpf_a0_L = lpf_a0_L * coef + input * (1 - coef);
+    filtered = lpf_a0_L;
+  );
+  filtered;
+);
+
+// ============================================================================
+// GUI FUNCTIONS
+// ============================================================================
+
+function draw_stepped_slider(x, y, w, value, steps, title, slider_id)
+local(i, notch_x, handle_x, handle_size, hovering, display_idx, label_str, snapped_val, track_hovering)
+(
+  // Title
+  gfx_set(FG_COLOR * 0.6, FG_COLOR * 0.6, FG_COLOR * 0.65);
+  gfx_setfont(1, "Arial", 11);
+  gfx_x = x; gfx_y = y - 18;
+  gfx_drawstr(title);
+  
+  // Only check hover if not dragging another slider
+  track_hovering = (dragging_slider == -1 || dragging_slider == slider_id) &&
+                   mouse_x >= x - 10 && mouse_x <= x + w + 10 && 
+                   mouse_y >= y - 10 && mouse_y <= y + SLIDER_HEIGHT + 10;
+  
+  // Track
+  track_hovering ? (
+    gfx_set(TRACK_COLOR * 1.2, TRACK_COLOR * 1.2, TRACK_COLOR * 1.3);
+  ) : (
+    gfx_set(TRACK_COLOR, TRACK_COLOR, TRACK_COLOR * 1.1);
+  );
+  gfx_rect(x, y, w, SLIDER_HEIGHT);
+  
+  // Draw notches
+  i = 0;
+  loop(steps,
+    notch_x = x + (i / (steps - 1)) * w;
+    gfx_set(NOTCH_COLOR, NOTCH_COLOR, NOTCH_COLOR);
+    gfx_rect(notch_x - 1, y - 4, 2, SLIDER_HEIGHT + 8);
+    
+    gfx_set(FG_COLOR * 0.4, FG_COLOR * 0.4, FG_COLOR * 0.45);
+    gfx_setfont(1, "Arial", 9);
+    gfx_x = notch_x - 20; 
+    gfx_y = y + SLIDER_HEIGHT + 5;
+    
+    steps == 5 ? (
+      label_str = get_sr_label(i);
+    ) : (
+      label_str = get_bit_label(i);
+    );
+    
+    gfx_drawstr(label_str);
+    i += 1;
+  );
+  
+  // Value fill
+  gfx_set(ACCENT_R, ACCENT_G, ACCENT_B);
+  gfx_rect(x, y, w * value, SLIDER_HEIGHT);
+  
+  // Handle
+  handle_x = x + w * value;
+  handle_size = 18;
+  
+  hovering = track_hovering;
+  
+  hovering || dragging_slider == slider_id ? (
+    gfx_set(FG_COLOR, FG_COLOR, FG_COLOR);
+  ) : (
+    gfx_set(FG_COLOR * 0.8, FG_COLOR * 0.8, FG_COLOR * 0.85);
+  );
+  
+  gfx_circle(handle_x, y + SLIDER_HEIGHT/2, handle_size/2, 1);
+  
+  // Current value display
+  gfx_set(ACCENT_R, ACCENT_G, ACCENT_B);
+  gfx_setfont(1, "Arial", 12, 'b');
+  gfx_x = x + w + 15; 
+  gfx_y = y - 4;
+  
+  snapped_val = floor(value * (steps - 1) + 0.5) / (steps - 1);
+  display_idx = floor(snapped_val * (steps - 1) + 0.5);
+  
+  steps == 5 ? (
+    label_str = get_sr_label(display_idx);
+  ) : (
+    label_str = get_bit_label(display_idx);
+  );
+  gfx_drawstr(label_str);
+  
+  hovering;
+);
+
+function draw_smooth_slider(x, y, w, value, title, display_val, slider_id)
+local(handle_x, handle_size, hovering)
+(
+  gfx_set(FG_COLOR * 0.6, FG_COLOR * 0.6, FG_COLOR * 0.65);
+  gfx_setfont(1, "Arial", 11);
+  gfx_x = x; gfx_y = y - 18;
+  gfx_drawstr(title);
+  
+  // Only check hover if not dragging another slider
+  hovering = (dragging_slider == -1 || dragging_slider == slider_id) &&
+             mouse_x >= x - 10 && mouse_x <= x + w + 10 && 
+             mouse_y >= y - 10 && mouse_y <= y + SLIDER_HEIGHT + 10;
+  
+  hovering ? (
+    gfx_set(TRACK_COLOR * 1.2, TRACK_COLOR * 1.2, TRACK_COLOR * 1.3);
+  ) : (
+    gfx_set(TRACK_COLOR, TRACK_COLOR, TRACK_COLOR * 1.1);
+  );
+  gfx_rect(x, y, w, SLIDER_HEIGHT);
+  
+  gfx_set(ACCENT_R * 0.8, ACCENT_G * 0.8, ACCENT_B * 0.8);
+  gfx_rect(x, y, w * value, SLIDER_HEIGHT);
+  
+  handle_x = x + w * value;
+  handle_size = 16;
+  
+  hovering || dragging_slider == slider_id ? (
+    gfx_set(FG_COLOR, FG_COLOR, FG_COLOR);
+  ) : (
+    gfx_set(FG_COLOR * 0.7, FG_COLOR * 0.7, FG_COLOR * 0.75);
+  );
+  
+  gfx_circle(handle_x, y + SLIDER_HEIGHT/2, handle_size/2, 1);
+  
+  gfx_set(FG_COLOR * 0.8, FG_COLOR * 0.8, FG_COLOR * 0.85);
+  gfx_setfont(1, "Arial", 12);
+  gfx_x = x + w + 15; 
+  gfx_y = y - 4;
+  gfx_drawstr(#display_val);
+  
+  hovering;
+);
+
+function draw_dropdown(x, y, w, h, selected_idx, is_open)
+local(label, hovering, i, item_y, item_hover)
+(
+  selected_idx == 0 ? label = "N64 VADPCM" :
+  selected_idx == 1 ? label = "IMA ADPCM" :
+  selected_idx == 2 ? label = "4-BIT PCM" :
+  label = "PSX ADPCM";
+  
+  hovering = mouse_x >= x && mouse_x <= x + w && 
+             mouse_y >= y && mouse_y <= y + h;
+  
+  is_open || hovering ? (
+    gfx_set(TRACK_COLOR * 1.3, TRACK_COLOR * 1.3, TRACK_COLOR * 1.4);
+  ) : (
+    gfx_set(TRACK_COLOR, TRACK_COLOR, TRACK_COLOR * 1.1);
+  );
+  gfx_rect(x, y, w, h);
+  
+  gfx_set(ACCENT_R, ACCENT_G, ACCENT_B);
+  gfx_setfont(1, "Arial", 12, 'b');
+  gfx_x = x + 12; 
+  gfx_y = y + h/2 - 7;
+  gfx_drawstr(label);
+  
+  gfx_set(FG_COLOR * 0.5, FG_COLOR * 0.5, FG_COLOR * 0.55);
+  gfx_x = x + w - 25;
+  gfx_y = y + h/2 - 7;
+  is_open ? gfx_drawstr("▲") : gfx_drawstr("▼");
+  
+  item_hover = -1;
+  is_open ? (
+    i = 0;
+    loop(4,
+      item_y = y + h + i * h;
+      
+      mouse_x >= x && mouse_x <= x + w && 
+      mouse_y >= item_y && mouse_y <= item_y + h ? (
+        item_hover = i;
+        gfx_set(TRACK_COLOR * 1.5, TRACK_COLOR * 1.5, TRACK_COLOR * 1.6);
+      ) : (
+        gfx_set(TRACK_COLOR * 1.2, TRACK_COLOR * 1.2, TRACK_COLOR * 1.3);
+      );
+      
+      gfx_rect(x, item_y, w, h);
+      
+      i == selected_idx ? (
+        gfx_set(ACCENT_R, ACCENT_G, ACCENT_B);
+      ) : (
+        gfx_set(FG_COLOR * 0.7, FG_COLOR * 0.7, FG_COLOR * 0.75);
+      );
+      
+      gfx_setfont(1, "Arial", 11);
+      gfx_x = x + 12;
+      gfx_y = item_y + h/2 - 6;
+      
+      i == 0 ? gfx_drawstr("N64 VADPCM") :
+      i == 1 ? gfx_drawstr("IMA ADPCM") :
+      i == 2 ? gfx_drawstr("4-BIT PCM") :
+      gfx_drawstr("PSX ADPCM");
+      
+      i += 1;
+    );
+  );
+  
+  dropdown_hover = item_hover;
+  hovering;
+);
+
+function draw_checkbox(x, y, size, checked, label)
+local(hovering)
+(
+  hovering = mouse_x >= x && mouse_x <= x + size + 100 && 
+             mouse_y >= y && mouse_y <= y + size;
+  
+  hovering ? (
+    gfx_set(TRACK_COLOR * 1.3, TRACK_COLOR * 1.3, TRACK_COLOR * 1.4);
+  ) : (
+    gfx_set(TRACK_COLOR, TRACK_COLOR, TRACK_COLOR * 1.1);
+  );
+  gfx_rect(x, y, size, size);
+  
+  checked ? (
+    gfx_set(ACCENT_R, ACCENT_G, ACCENT_B);
+    gfx_rect(x + 4, y + 4, size - 8, size - 8);
+  );
+  
+  gfx_set(FG_COLOR * 0.7, FG_COLOR * 0.7, FG_COLOR * 0.75);
+  gfx_setfont(1, "Arial", 11);
+  gfx_x = x + size + 8;
+  gfx_y = y + size/2 - 6;
+  gfx_drawstr(label);
+  
+  hovering;
+);
+
+function snap_to_steps(value, steps)
+(
+  floor(value * (steps - 1) + 0.5) / (steps - 1);
+);
+
+@slider
+gui_sample_rate = sample_rate_idx / 4;
+gui_bit_depth = bit_depth_idx / 3;
+gui_drive = drive;
+gui_output = output_gain;
+gui_mix = dry_wet_mix;
+gui_artifacts = artifact_amount;
+gui_codec = codec_type;
+gui_lofi = lofi_filter;
+gui_aa = aa_filter;
+
+@block
+target_srate = sample_rates[floor(gui_sample_rate * 4 + 0.5)];
+src_ratio = srate / target_srate;
+
+smooth_drive += (gui_drive - smooth_drive) * 0.1;
+smooth_artifacts += (gui_artifacts - smooth_artifacts) * 0.1;
+smooth_mix += (gui_mix - smooth_mix) * 0.1;
+smooth_output += (gui_output - smooth_output) * 0.1;
+
+@gfx 440 445
+
+// Background
+gfx_set(BG_COLOR, BG_COLOR, BG_COLOR * 1.1);
+gfx_rect(0, 0, gfx_w, gfx_h);
+
+// Title
+gfx_set(FG_COLOR, FG_COLOR, FG_COLOR);
+gfx_setfont(1, "Arial", 18, 'b');
+gfx_x = MARGIN; gfx_y = 20;
+gfx_drawstr("RETRO CODEC");
+gfx_set(ACCENT_R, ACCENT_G, ACCENT_B);
+gfx_drawstr(" SUITE");
+
+// Version
+gfx_set(FG_COLOR * 0.3, FG_COLOR * 0.3, FG_COLOR * 0.35);
+gfx_setfont(1, "Arial", 9);
+gfx_x = MARGIN + 180; gfx_y = 27;
+gfx_drawstr("v7.1");
+
+// Codec dropdown LABEL (draw early, dropdown itself drawn at end for z-index)
+dropdown_y = 60;
+gfx_set(FG_COLOR * 0.4, FG_COLOR * 0.4, FG_COLOR * 0.45);
+gfx_setfont(1, "Arial", 10);
+gfx_x = MARGIN; gfx_y = dropdown_y - 18;
+gfx_drawstr("CODEC TYPE");
+
+// Sample rate slider
+hovering_sr = draw_stepped_slider(MARGIN, 130, SLIDER_WIDTH, gui_sample_rate, 
+                               5, "SAMPLE RATE", 1);
+
+// Control hints (between sample rate and bit depth)
+gfx_set(FG_COLOR * 0.3, FG_COLOR * 0.3, FG_COLOR * 0.35);
+gfx_setfont(1, "Arial", 9);
+gfx_x = MARGIN + 70; gfx_y = 163;
+gfx_drawstr("Double-Click: Reset to Default");
+
+// Bit depth slider
+hovering_bd = draw_stepped_slider(MARGIN, 195, SLIDER_WIDTH, gui_bit_depth, 
+                               4, "BIT DEPTH", 2);
+
+// Drive slider
+drive_text = 1700;
+sprintf(#drive_text, "%d%%", floor(gui_drive * 100));
+hovering_dr = draw_smooth_slider(MARGIN, 260, SLIDER_WIDTH, gui_drive, 
+                              "SATURATION", drive_text, 3);
+
+// Artifacts slider
+art_text = 1800;
+sprintf(#art_text, "%d%%", floor(gui_artifacts * 100));
+hovering_art = draw_smooth_slider(MARGIN, 300, SLIDER_WIDTH, gui_artifacts,
+                              "ARTIFACTS", art_text, 4);
+
+// Mix slider
+mix_text = 1900;
+sprintf(#mix_text, "%d%%", floor(gui_mix * 100));
+hovering_mix = draw_smooth_slider(MARGIN, 345, 145, gui_mix, "MIX", mix_text, 5);
+
+// Output slider
+out_text = 2000;
+sprintf(#out_text, "%+.1fdB", (gui_output - 0.5) * 36 - 12);
+hovering_out = draw_smooth_slider(MARGIN + 180, 345, 145, gui_output, 
+                              "OUTPUT", out_text, 6);
+
+// Checkboxes
+checkbox_aa = draw_checkbox(MARGIN, 390, 16, gui_aa, "Anti-Aliasing");
+checkbox_lofi = draw_checkbox(MARGIN + 140, 390, 16, gui_lofi, "Lo-Fi Filter");
+
+// Footer
+gfx_set(FG_COLOR * 0.25, FG_COLOR * 0.25, FG_COLOR * 0.3);
+gfx_setfont(1, "Arial", 9);
+gfx_x = MARGIN; gfx_y = gfx_h - 18;
+gui_codec == 0 ? gfx_drawstr("Nintendo 64 Vector-Adaptive Differential PCM") :
+gui_codec == 1 ? gfx_drawstr("Interactive Multimedia Association ADPCM Standard") :
+gui_codec == 2 ? gfx_drawstr("4-bit Pulse Code Modulation with Error Diffusion") :
+gfx_drawstr("PlayStation 1 Adaptive Differential PCM");
+
+// Draw dropdown LAST so it appears on top of everything (z-index fix)
+hovering = draw_dropdown(MARGIN, dropdown_y, DROPDOWN_WIDTH, DROPDOWN_HEIGHT, 
+                         gui_codec, dropdown_open);
+
+// Mouse handling
+mouse_cap & 1 ? (
+  !mouse_was_down ? (
+    current_time = time_precise();
+    
+    // Check for double-click
+    is_double_click = (current_time - last_click_time) < DOUBLE_CLICK_TIME;
+    
+    // Dropdown
+    mouse_x >= MARGIN && mouse_x <= MARGIN + DROPDOWN_WIDTH &&
+    mouse_y >= dropdown_y && mouse_y <= dropdown_y + DROPDOWN_HEIGHT ? (
+      dropdown_open = !dropdown_open;
+      last_click_slider = -1;
+    ) : dropdown_open && dropdown_hover >= 0 ? (
+      gui_codec = dropdown_hover;
+      codec_type = dropdown_hover;
+      slider_automate(slider7);
+      dropdown_open = 0;
+      last_click_slider = -1;
+    ) : dropdown_open ? (
+      dropdown_open = 0;
+      last_click_slider = -1;
+    ) : (
+      // Check which slider was clicked
+      hovering_sr ? (
+        is_double_click && last_click_slider == 1 ? (
+          gui_sample_rate = DEFAULT_SAMPLE_RATE;
+          sample_rate_idx = floor(gui_sample_rate * 4 + 0.5);
+          slider_automate(slider1);
+        ) : (
+          dragging_slider = 1;
+        );
+        last_click_slider = 1;
+      ) : hovering_bd ? (
+        is_double_click && last_click_slider == 2 ? (
+          gui_bit_depth = DEFAULT_BIT_DEPTH;
+          bit_depth_idx = floor(gui_bit_depth * 3 + 0.5);
+          slider_automate(slider2);
+        ) : (
+          dragging_slider = 2;
+        );
+        last_click_slider = 2;
+      ) : hovering_dr ? (
+        is_double_click && last_click_slider == 3 ? (
+          gui_drive = DEFAULT_DRIVE;
+          drive = gui_drive;
+          slider_automate(slider3);
+        ) : (
+          dragging_slider = 3;
+        );
+        last_click_slider = 3;
+      ) : hovering_art ? (
+        is_double_click && last_click_slider == 4 ? (
+          gui_artifacts = DEFAULT_ARTIFACTS;
+          artifact_amount = gui_artifacts;
+          slider_automate(slider6);
+        ) : (
+          dragging_slider = 4;
+        );
+        last_click_slider = 4;
+      ) : hovering_mix ? (
+        is_double_click && last_click_slider == 5 ? (
+          gui_mix = DEFAULT_MIX;
+          dry_wet_mix = gui_mix;
+          slider_automate(slider5);
+        ) : (
+          dragging_slider = 5;
+        );
+        last_click_slider = 5;
+      ) : hovering_out ? (
+        is_double_click && last_click_slider == 6 ? (
+          gui_output = DEFAULT_OUTPUT;
+          output_gain = gui_output;
+          slider_automate(slider4);
+        ) : (
+          dragging_slider = 6;
+        );
+        last_click_slider = 6;
+      ) : (
+        last_click_slider = -1;
+      );
+    );
+    
+    // Checkboxes
+    checkbox_aa ? (
+      gui_aa = !gui_aa;
+      aa_filter = gui_aa;
+      slider_automate(slider9);
+      last_click_slider = -1;
+    );
+    
+    checkbox_lofi ? (
+      gui_lofi = !gui_lofi;
+      lofi_filter = gui_lofi;
+      slider_automate(slider8);
+      last_click_slider = -1;
+    );
+    
+    last_click_time = current_time;
+  );
+  
+  // Handle dragging - only active slider responds - ALWAYS SNAP TO STEPS
+  dragging_slider == 1 ? (
+    gui_sample_rate = (mouse_x - MARGIN) / SLIDER_WIDTH;
+    gui_sample_rate = max(0, min(1, gui_sample_rate));
+    gui_sample_rate = snap_to_steps(gui_sample_rate, 5);  // Always snap
+    sample_rate_idx = floor(gui_sample_rate * 4 + 0.5);
+    slider_automate(slider1);
+  ) : dragging_slider == 2 ? (
+    gui_bit_depth = (mouse_x - MARGIN) / SLIDER_WIDTH;
+    gui_bit_depth = max(0, min(1, gui_bit_depth));
+    gui_bit_depth = snap_to_steps(gui_bit_depth, 4);  // Always snap
+    bit_depth_idx = floor(gui_bit_depth * 3 + 0.5);
+    slider_automate(slider2);
+  ) : dragging_slider == 3 ? (
+    gui_drive = (mouse_x - MARGIN) / SLIDER_WIDTH;
+    gui_drive = max(0, min(1, gui_drive));
+    drive = gui_drive;
+    slider_automate(slider3);
+  ) : dragging_slider == 4 ? (
+    gui_artifacts = (mouse_x - MARGIN) / SLIDER_WIDTH;
+    gui_artifacts = max(0, min(1, gui_artifacts));
+    artifact_amount = gui_artifacts;
+    slider_automate(slider6);
+  ) : dragging_slider == 5 ? (
+    gui_mix = (mouse_x - MARGIN) / 145;
+    gui_mix = max(0, min(1, gui_mix));
+    dry_wet_mix = gui_mix;
+    slider_automate(slider5);
+  ) : dragging_slider == 6 ? (
+    gui_output = (mouse_x - (MARGIN + 180)) / 145;
+    gui_output = max(0, min(1, gui_output));
+    output_gain = gui_output;
+    slider_automate(slider4);
+  );
+) : (
+  dragging_slider = -1;
+);
+
+mouse_was_down = mouse_cap & 1;
+
+@sample
+// Get settings
+current_sr_idx = floor(gui_sample_rate * 4 + 0.5);
+current_bit_idx = floor(gui_bit_depth * 3 + 0.5);
+
+// Store dry signal
+dry_L = spl0;
+dry_R = spl1;
+
+// Apply saturation (no volume increase)
+in_L = soft_saturate(spl0, smooth_drive);
+in_R = soft_saturate(spl1, smooth_drive);
+
+// Anti-aliasing filter (optional)
+gui_aa ? (
+  aa_cutoff = target_srate * 0.45;
+  in_L = aa_filter(in_L, 0, aa_cutoff);
+  in_R = aa_filter(in_R, 1, aa_cutoff);
+);
+
+// Sample rate reduction
+src_phase += 1 / src_ratio;
+src_phase >= 1.0 ? (
+  src_phase -= 1.0;
+  
+  // Bit reduction
+  in_L = quantize_bits(in_L, current_bit_idx);
+  in_R = quantize_bits(in_R, current_bit_idx);
+  
+  // Codec processing
+  gui_codec == 0 ? (
+    hold_L = vadpcm_process(in_L, 0);
+    hold_R = vadpcm_process(in_R, 1);
+  ) : gui_codec == 1 ? (
+    hold_L = ima_process(in_L, 0);
+    hold_R = ima_process(in_R, 1);
+  ) : gui_codec == 2 ? (
+    hold_L = pcm4_process(in_L, 0);
+    hold_R = pcm4_process(in_R, 1);
+  ) : (
+    hold_L = psx_adpcm_process(in_L, 0);
+    hold_R = psx_adpcm_process(in_R, 1);
+  );
+);
+
+// Lo-fi filter (optional)
+gui_lofi ? (
+  lofi_cutoff = target_srate * 0.4;
+  hold_L = lofi_filter(hold_L, 0, lofi_cutoff);
+  hold_R = lofi_filter(hold_R, 1, lofi_cutoff);
+);
+
+// Output with gain and mix
+// Output range: -24dB to +12dB (36dB total range, 0dB at center)
+out_gain = db_to_linear((smooth_output - 0.5) * 36 - 12);
+spl0 = (hold_L * smooth_mix + dry_L * (1 - smooth_mix)) * out_gain;
+spl1 = (hold_R * smooth_mix + dry_R * (1 - smooth_mix)) * out_gain;
+
+// Final clip
+spl0 = n64_clip(spl0);
+spl1 = n64_clip(spl1);

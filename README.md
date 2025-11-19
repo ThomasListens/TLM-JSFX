@@ -5,7 +5,7 @@ My JSFX plugins for REAPER. I'm just getting started but am commited long term t
 
 Authentic emulation of vintage gaming console audio compression formats. Transform your audio with the signature sound of classic gaming hardware.
 
-![Retro Codec Suite Interface](https://i.imgur.com/placeholder.png)
+![Retro Codec Suite Interface](https://imgur.com/gallery/retro-codec-suite-IToprpx#55v0koi)
 
 ### Features
 - **4 Codec Types:** N64 VADPCM, IMA ADPCM, 4-bit PCM, PSX ADPCM
