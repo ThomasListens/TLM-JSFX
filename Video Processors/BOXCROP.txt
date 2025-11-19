@@ -1,0 +1,390 @@
+// Instagram Harmony Grid - Quick Layout Presets
+// Perfect for creating multi-part harmony videos with color coordination
+// Use multiple instances on different tracks for each harmony part
+
+// === MANUAL TEXT ENTRY - 5 POSITIONS ===
+// Edit the text between quotes for each position:
+#text_center = "";        // Center text (e.g., "L", "A", "T", "B")
+#text_tl = "L";            // Top-Left corner (e.g., "1/1", "5/4")
+#text_tr = "";            // Top-Right corner
+#text_bl = "";            // Bottom-Left corner
+#text_br = "1/1";         // Bottom-Right corner
+// ========================================
+
+//@param1:preset 'Layout Preset' 0 0 8 4 1
+// 0=Custom, 1=Left Third, 2=Center Third, 3=Right Third
+// 4=Top Left, 5=Top Right, 6=Bottom Left, 7=Bottom Right, 8=Full Center
+
+//@param2:aspect_preset 'Crop Aspect Ratio' 0 0 7 0 1
+// 0=Square (1:1), 1=Portrait (5:4), 2=Landscape (4:5)
+// 3=Wide (16:9), 4=Tall (9:16)
+// 5=Super Wide (21:9), 6=Super Tall (9:21), 7=Story (9:16)
+
+//@param3:size 'Box Size' 0.3 0.1 1 0.5 0.01
+//@param4:x_custom 'Custom X (if preset=0)' 0.5 0 1 0.5 0.01
+//@param5:y_custom 'Custom Y (if preset=0)' 0.5 0 1 0.5 0.01
+
+//@param7:border_thickness 'Border Thickness' 4 0 20 5 0.5
+//@param8:color_preset 'Crayola Color' 3 0 27 13 1
+// 0=Custom RGB, 1=Black, 2=White
+// 3=Red, 4=Orange, 5=Yellow, 6=Green
+// 7=Blue, 8=Violet, 9=Brown
+// 10=Red-Orange, 11=Yellow-Orange, 12=Yellow-Green
+// 13=Blue-Green, 14=Blue-Violet, 15=Red-Violet
+// 16=Gray, 17=Scarlet, 18=Apricot, 19=Peach
+// 20=Magenta, 21=Pink, 22=Carnation Pink
+// 23=Indigo, 24=Cerulean, 25=Dandelion
+// 26=Gold, 27=Silver
+//@param9:color_r 'Custom Red' 1 0 1 0.5 0.01
+//@param10:color_g 'Custom Green' 0 0 1 0.5 0.01
+//@param11:color_b 'Custom Blue' 0 0 1 0.5 0.01
+
+//@param13:source_zoom 'Zoom Into Face' 1.5 0.5 3 1 0.01
+//@param14:source_x 'Pan Source X' 0.5 0 1 0.5 0.01
+//@param15:source_y 'Pan Source Y' 0.5 0 1 0.5 0.01
+
+//@param17:rounded 'Rounded Corners' 0 0 50 10 1
+//@param18:glow 'Glow Effect' 0 0 1 0.5 0.01
+//@param19:opacity 'Opacity' 1 0 1 0.5 0.01
+//@param20:overlay_track 'Overlay on Track Below' 1 0 1 0.5 1
+
+//@param22:text_on 'Show Text' 0 0 1 0.5 1
+//@param23:text_size_center 'Center Text Size' 120 10 1000 100 1
+//@param24:text_size_corners 'Corner Text Size' 36 10 500 50 1
+//@param25:center_x_offset 'Center X Adjust' 0.5 0 1 0.5 0.01
+//@param26:center_y_offset 'Center Y Adjust' 0.5 0 1 0.5 0.01
+//@param27:center_opacity 'Center Text Opacity' 1 0 1 0.5 0.01
+//@param28:corners_opacity 'Corners Text Opacity' 1 0 1 0.5 0.01
+//@param29:font_preset 'Font' 0 0 4 2 1
+// 0=Courier New (coding), 1=Arial, 2=Impact, 3=Georgia, 4=Consolas
+//@param30:corner_margin 'Corner Inset' 0.02 0 0.2 0.05 0.01
+
+// Get inputs
+img_beneath = input_track(0);
+img_current = 0;
+input_info(img_current, src_w, src_h);
+
+// Crayola Color Palette - Black & White first, then basic to special
+color_preset == 1 ? (color_r = 0.141; color_g = 0.141; color_b = 0.141;) :  // Black
+color_preset == 2 ? (color_r = 1.000; color_g = 1.000; color_b = 1.000;) :  // White
+// Basic 8 Crayola colors
+color_preset == 3 ? (color_r = 0.933; color_g = 0.125; color_b = 0.302;) :  // Red
+color_preset == 4 ? (color_r = 1.000; color_g = 0.459; color_b = 0.220;) :  // Orange  
+color_preset == 5 ? (color_r = 0.988; color_g = 0.910; color_b = 0.514;) :  // Yellow
+color_preset == 6 ? (color_r = 0.110; color_g = 0.675; color_b = 0.471;) :  // Green
+color_preset == 7 ? (color_r = 0.122; color_g = 0.471; color_b = 0.706;) :  // Blue
+color_preset == 8 ? (color_r = 0.541; color_g = 0.169; color_b = 0.886;) :  // Violet
+color_preset == 9 ? (color_r = 0.694; color_g = 0.349; color_b = 0.157;) :  // Brown
+// Extended colors
+color_preset == 10 ? (color_r = 1.000; color_g = 0.325; color_b = 0.286;) : // Red-Orange
+color_preset == 11 ? (color_r = 1.000; color_g = 0.702; color_b = 0.278;) : // Yellow-Orange
+color_preset == 12 ? (color_r = 0.784; color_g = 0.902; color_b = 0.373;) : // Yellow-Green
+color_preset == 13 ? (color_r = 0.098; color_g = 0.620; color_b = 0.741;) : // Blue-Green
+color_preset == 14 ? (color_r = 0.455; color_g = 0.259; color_b = 0.882;) : // Blue-Violet
+color_preset == 15 ? (color_r = 0.753; color_g = 0.267; color_b = 0.561;) : // Red-Violet
+color_preset == 16 ? (color_r = 0.584; color_g = 0.569; color_b = 0.549;) : // Gray
+// Special colors
+color_preset == 17 ? (color_r = 0.988; color_g = 0.078; color_b = 0.235;) : // Scarlet
+color_preset == 18 ? (color_r = 0.992; color_g = 0.855; color_b = 0.710;) : // Apricot
+color_preset == 19 ? (color_r = 1.000; color_g = 0.812; color_b = 0.671;) : // Peach
+color_preset == 20 ? (color_r = 0.961; color_g = 0.227; color_b = 0.690;) : // Magenta
+color_preset == 21 ? (color_r = 1.000; color_g = 0.753; color_b = 0.796;) : // Pink
+color_preset == 22 ? (color_r = 1.000; color_g = 0.667; color_b = 0.800;) : // Carnation Pink
+color_preset == 23 ? (color_r = 0.365; color_g = 0.000; color_b = 0.545;) : // Indigo
+color_preset == 24 ? (color_r = 0.114; color_g = 0.675; color_b = 0.839;) : // Cerulean
+color_preset == 25 ? (color_r = 0.992; color_g = 0.863; color_b = 0.145;) : // Dandelion
+color_preset == 26 ? (color_r = 1.000; color_g = 0.843; color_b = 0.000;) : // Gold (bonus)
+color_preset == 27 ? (color_r = 0.753; color_g = 0.753; color_b = 0.753;);   // Silver (bonus)
+
+// Calculate box dimensions based on aspect ratio
+aspect_preset == 0 ? (
+  // Square (1:1)
+  box_w = min(project_w, project_h) * size;
+  box_h = box_w;
+) : aspect_preset == 1 ? (
+  // Portrait (5:4) - slightly taller
+  base_size = min(project_w, project_h) * size;
+  box_w = base_size;
+  box_h = base_size * 1.25;
+) : aspect_preset == 2 ? (
+  // Landscape (4:5) - slightly wider
+  base_size = min(project_w, project_h) * size;
+  box_w = base_size * 1.25;
+  box_h = base_size;
+) : aspect_preset == 3 ? (
+  // Wide (16:9)
+  base_size = min(project_w, project_h) * size;
+  box_w = base_size * 1.778;
+  box_h = base_size;
+) : aspect_preset == 4 ? (
+  // Tall (9:16)
+  base_size = min(project_w, project_h) * size;
+  box_w = base_size;
+  box_h = base_size * 1.778;
+) : aspect_preset == 5 ? (
+  // Super Wide (21:9)
+  base_size = min(project_w, project_h) * size;
+  box_w = base_size * 2.333;
+  box_h = base_size;
+) : aspect_preset == 6 ? (
+  // Super Tall (9:21)
+  base_size = min(project_w, project_h) * size;
+  box_w = base_size;
+  box_h = base_size * 2.333;
+) : aspect_preset == 7 ? (
+  // Instagram Story (9:16)
+  base_size = min(project_w, project_h) * size;
+  box_w = base_size;
+  box_h = base_size * 1.778;
+) : (
+  // Default to square if something goes wrong
+  box_w = min(project_w, project_h) * size;
+  box_h = box_w;
+);
+
+// Layout presets for common harmony arrangements
+preset == 0 ? (
+  // Custom position
+  pos_x = x_custom;
+  pos_y = y_custom;
+) : preset == 1 ? (
+  // Left third
+  pos_x = 0.17;
+  pos_y = 0.5;
+) : preset == 2 ? (
+  // Center third
+  pos_x = 0.5;
+  pos_y = 0.5;
+) : preset == 3 ? (
+  // Right third
+  pos_x = 0.83;
+  pos_y = 0.5;
+) : preset == 4 ? (
+  // Top left quarter
+  pos_x = 0.25;
+  pos_y = 0.25;
+) : preset == 5 ? (
+  // Top right quarter
+  pos_x = 0.75;
+  pos_y = 0.25;
+) : preset == 6 ? (
+  // Bottom left quarter
+  pos_x = 0.25;
+  pos_y = 0.75;
+) : preset == 7 ? (
+  // Bottom right quarter
+  pos_x = 0.75;
+  pos_y = 0.75;
+) : preset == 8 ? (
+  // Full center (good for lead vocal)
+  pos_x = 0.5;
+  pos_y = 0.5;
+);
+
+// Calculate actual pixel positions
+box_x = project_w * pos_x - box_w / 2;
+box_y = project_h * pos_y - box_h / 2;
+
+// Source crop calculations - match the box aspect ratio
+box_aspect = box_w / box_h;
+src_aspect = src_w / src_h;
+
+// Calculate crop dimensions to match box aspect ratio
+box_aspect > src_aspect ? (
+  // Box is wider relative to source - constrain by width
+  src_crop_w = src_w / source_zoom;
+  src_crop_h = src_crop_w / box_aspect;
+) : (
+  // Box is taller relative to source - constrain by height
+  src_crop_h = src_h / source_zoom;
+  src_crop_w = src_crop_h * box_aspect;
+);
+
+// Calculate crop position
+src_x = (src_w - src_crop_w) * source_x;
+src_y = (src_h - src_crop_h) * source_y;
+
+// Draw base layer
+overlay_track && img_beneath != img_current ? (
+  gfx_blit(img_beneath, 0);
+) : (
+  gfx_set(0, 0, 0, 1);
+  gfx_fillrect(0, 0, project_w, project_h);
+);
+
+// Draw glow effect if enabled
+glow > 0 ? (
+  glow_size = border_thickness + 20;
+  glow_alpha = glow * 0.3;
+  loop(3,
+    gfx_set(color_r, color_g, color_b, glow_alpha);
+    gfx_fillrect(
+      box_x - glow_size,
+      box_y - glow_size,
+      box_w + glow_size * 2,
+      box_h + glow_size * 2
+    );
+    glow_size *= 0.7;
+    glow_alpha *= 0.5;
+  );
+);
+
+// Draw colored border
+border_thickness > 0 ? (
+  gfx_set(color_r, color_g, color_b, opacity);
+  
+  // Draw border with optional rounded corners
+  rounded > 0 ? (
+    // Simplified rounded rectangle (4 corners + 4 sides)
+    corner_size = min(rounded, min(box_w, box_h) * 0.2);
+    
+    // Top border
+    gfx_fillrect(box_x - border_thickness + corner_size, 
+                 box_y - border_thickness,
+                 box_w + border_thickness * 2 - corner_size * 2,
+                 border_thickness);
+    // Bottom border
+    gfx_fillrect(box_x - border_thickness + corner_size,
+                 box_y + box_h,
+                 box_w + border_thickness * 2 - corner_size * 2,
+                 border_thickness);
+    // Left border
+    gfx_fillrect(box_x - border_thickness,
+                 box_y - border_thickness + corner_size,
+                 border_thickness,
+                 box_h + border_thickness * 2 - corner_size * 2);
+    // Right border
+    gfx_fillrect(box_x + box_w,
+                 box_y - border_thickness + corner_size,
+                 border_thickness,
+                 box_h + border_thickness * 2 - corner_size * 2);
+  ) : (
+    // Simple rectangle border
+    gfx_fillrect(
+      box_x - border_thickness,
+      box_y - border_thickness,
+      box_w + border_thickness * 2,
+      box_h + border_thickness * 2
+    );
+  );
+);
+
+// Draw the video content
+// Clamp opacity to valid range to prevent automation glitches
+opacity = min(max(opacity, 0), 1);
+gfx_a = opacity;
+gfx_blit(img_current, 0,
+  box_x, box_y, box_w, box_h,
+  src_x, src_y, src_crop_w, src_crop_h
+);
+
+// Draw text overlays if enabled
+text_on ? (
+  // Set font name
+  font_preset == 0 ? font_name = "Courier New" :
+  font_preset == 1 ? font_name = "Arial" :
+  font_preset == 2 ? font_name = "Impact" :
+  font_preset == 3 ? font_name = "Georgia" :
+  font_name = "Consolas";
+  
+  // Corner margin in pixels
+  margin = min(box_w, box_h) * corner_margin;
+  
+  // ==== DRAW CENTER TEXT ====
+  strlen(#text_center) > 0 ? (
+    // Set larger font for center
+    gfx_setfont(text_size_center, font_name);
+    gfx_str_measure(#text_center, text_w, text_h);
+    
+    // Calculate position with adjustable offset
+    text_x = box_x + (box_w * center_x_offset) - (text_w / 2);
+    text_y = box_y + (box_h * center_y_offset) - (text_h / 2);
+    
+    // Draw outline for visibility
+    gfx_set(0, 0, 0, center_opacity * 0.8);
+    outline = 3;
+    gfx_str_draw(#text_center, text_x - outline, text_y);
+    gfx_str_draw(#text_center, text_x + outline, text_y);
+    gfx_str_draw(#text_center, text_x, text_y - outline);
+    gfx_str_draw(#text_center, text_x, text_y + outline);
+    
+    // Draw main center text
+    gfx_set(color_r, color_g, color_b, center_opacity);
+    gfx_str_draw(#text_center, text_x, text_y);
+  );
+  
+  // Set smaller font for corners
+  gfx_setfont(text_size_corners, font_name);
+  
+  // ==== TOP-LEFT CORNER ====
+  strlen(#text_tl) > 0 ? (
+    gfx_str_measure(#text_tl, text_w, text_h);
+    text_x = box_x + margin;
+    text_y = box_y + margin - text_h * 0.1; // Adjusted to sit higher
+    
+    // Outline
+    gfx_set(0, 0, 0, corners_opacity * 0.8);
+    gfx_str_draw(#text_tl, text_x - 1, text_y);
+    gfx_str_draw(#text_tl, text_x + 1, text_y);
+    gfx_str_draw(#text_tl, text_x, text_y - 1);
+    gfx_str_draw(#text_tl, text_x, text_y + 1);
+    
+    // Main text
+    gfx_set(color_r, color_g, color_b, corners_opacity);
+    gfx_str_draw(#text_tl, text_x, text_y);
+  );
+  
+  // ==== TOP-RIGHT CORNER ====
+  strlen(#text_tr) > 0 ? (
+    gfx_str_measure(#text_tr, text_w, text_h);
+    text_x = box_x + box_w - margin - text_w;
+    text_y = box_y + margin - text_h * 0.1; // Adjusted to sit higher
+    
+    // Outline
+    gfx_set(0, 0, 0, corners_opacity * 0.8);
+    gfx_str_draw(#text_tr, text_x - 1, text_y);
+    gfx_str_draw(#text_tr, text_x + 1, text_y);
+    gfx_str_draw(#text_tr, text_x, text_y - 1);
+    gfx_str_draw(#text_tr, text_x, text_y + 1);
+    
+    // Main text
+    gfx_set(color_r, color_g, color_b, corners_opacity);
+    gfx_str_draw(#text_tr, text_x, text_y);
+  );
+  
+  // ==== BOTTOM-LEFT CORNER ====
+  strlen(#text_bl) > 0 ? (
+    gfx_str_measure(#text_bl, text_w, text_h);
+    text_x = box_x + margin;
+    text_y = box_y + box_h - margin - text_h * 0.9; // Perfect corner position
+    
+    // Outline
+    gfx_set(0, 0, 0, corners_opacity * 0.8);
+    gfx_str_draw(#text_bl, text_x - 1, text_y);
+    gfx_str_draw(#text_bl, text_x + 1, text_y);
+    gfx_str_draw(#text_bl, text_x, text_y - 1);
+    gfx_str_draw(#text_bl, text_x, text_y + 1);
+    
+    // Main text
+    gfx_set(color_r, color_g, color_b, corners_opacity);
+    gfx_str_draw(#text_bl, text_x, text_y);
+  );
+  
+  // ==== BOTTOM-RIGHT CORNER ====
+  strlen(#text_br) > 0 ? (
+    gfx_str_measure(#text_br, text_w, text_h);
+    text_x = box_x + box_w - margin - text_w;
+    text_y = box_y + box_h - margin - text_h * 0.9; // Perfect corner position
+    
+    // Outline
+    gfx_set(0, 0, 0, corners_opacity * 0.8);
+    gfx_str_draw(#text_br, text_x - 1, text_y);
+    gfx_str_draw(#text_br, text_x + 1, text_y);
+    gfx_str_draw(#text_br, text_x, text_y - 1);
+    gfx_str_draw(#text_br, text_x, text_y + 1);
+    
+    // Main text
+    gfx_set(color_r, color_g, color_b, corners_opacity);
+    gfx_str_draw(#text_br, text_x, text_y);
+  );
+);

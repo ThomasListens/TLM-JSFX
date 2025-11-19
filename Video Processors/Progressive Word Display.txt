@@ -1,0 +1,170 @@
+// Progressive Word Display Overlay with Individual Word Drift
+#text="Listen to Yourself"; // Edit your full lyrics here
+font="Cascadia Code SemiLight"; // Final choice: clean, thin, modern monospace
+//@param1:size 'text height' 0.05 0.01 0.2 0.1 0.001
+//@param2:ypos 'y position' 0.95 0 1 0.5 0.01
+//@param3:xpos 'x position' 0.5 0 1 0.5 0.01
+//@param4:border 'bg pad' 0.1 0 1 0.5 0.01
+//@param5:fgc 'text bright' 1.0 0 1 0.5 0.01
+//@param6:fga 'text alpha' 1.0 0 1 0.5 0.01
+//@param7:bgc 'bg bright' 0.75 0 1 0.5 0.01
+//@param8:bga 'bg alpha' 0.5 0 1 0.5 0.01
+//@param9:bgfit 'fit bg to text' 0 0 1 0.5 1
+//@param10:ignoreinput 'ignore input' 0 0 1 0.5 1
+//@param11:word_count 'Word Progress' 0 0 3 0 1
+//@param12:drift_speed 'Drift Speed' 2.0 0 10 2.0 0.1
+//@param13:drift_depth 'Drift Depth (pixels)' 20 0 100 20 1
+//@param14:color_invert 'Color Invert Mix' 0 0 1 0 0.01
+
+input = ignoreinput ? -2:0;
+project_wh_valid===0 ? input_info(input,project_w,project_h);
+gfx_a2=0;
+gfx_blit(input,1);
+gfx_setfont(size*project_h,font);
+
+// Progressive word display logic - back to simple, reliable approach
+word_num = floor(word_count);
+
+// Simple hardcoded approach for reliability - EDIT THESE LINES FOR DIFFERENT LYRICS
+word_num == 0 ? strcpy(#display_text, "");
+word_num == 1 ? strcpy(#display_text, "Listen");
+word_num == 2 ? strcpy(#display_text, "Listen to");
+word_num == 3 ? strcpy(#display_text, "Listen to Yourself");
+// ADD MORE LINES HERE FOR LONGER PHRASES:
+// word_num == 4 ? strcpy(#display_text, "Listen to Yourself and");
+// word_num == 5 ? strcpy(#display_text, "Listen to Yourself and grow");
+
+// Use the progressive text for measurements
+gfx_str_measure(#display_text, txtw, txth);
+
+// Calculate base positioning
+min_height = size * project_h;
+display_height = txth > 0 ? txth : min_height;
+b = (border * display_height)|0;
+yt = ((project_h - display_height - b*2) * ypos)|0;
+
+// For professional left-alignment: measure the FULL final text to set consistent position
+gfx_str_measure("Listen to Yourself", full_txtw, full_txth); // CHANGE THIS FOR DIFFERENT LYRICS
+left_start_pos = (xpos * project_w) - full_txtw * 0.5;
+xp = left_start_pos;
+
+// Get current time for drift calculations
+time_offset = time_precise();
+
+// Only draw text if there's something to show
+txtw > 0 ? (
+  shadow_offset = 5;
+  
+  // Draw each word individually with its own drift
+  current_x = xp;
+  
+  // Word 1: "Listen" - appears at word_count >= 1
+  word_count >= 1 ? (
+    gfx_str_measure("Listen", word1_w, word1_h);
+    word1_phase = 1.234;
+    word1_drift = sin(time_offset * drift_speed + word1_phase) * drift_depth;
+    
+    final_x = current_x;
+    final_y = yt + b + word1_drift;
+    
+    // Calculate colors based on invert mix (0=normal, 1=inverted)
+    outline_r = color_invert;
+    outline_g = color_invert;
+    outline_b = color_invert;
+    
+    text_r = 1 - color_invert;
+    text_g = 1 - color_invert;
+    text_b = 1 - color_invert;
+    
+    // Draw thicker outline by drawing text in multiple positions
+    gfx_set(outline_r, outline_g, outline_b, 1);
+    outline_thickness = 1.5;
+    // 8-direction outline for smoother, thicker look
+    gfx_str_draw("Listen", final_x - outline_thickness, final_y);
+    gfx_str_draw("Listen", final_x + outline_thickness, final_y);
+    gfx_str_draw("Listen", final_x, final_y - outline_thickness);
+    gfx_str_draw("Listen", final_x, final_y + outline_thickness);
+    gfx_str_draw("Listen", final_x - outline_thickness, final_y - outline_thickness);
+    gfx_str_draw("Listen", final_x + outline_thickness, final_y - outline_thickness);
+    gfx_str_draw("Listen", final_x - outline_thickness, final_y + outline_thickness);
+    gfx_str_draw("Listen", final_x + outline_thickness, final_y + outline_thickness);
+    
+    // Main text
+    gfx_set(text_r, text_g, text_b, 1);
+    gfx_str_draw("Listen", final_x, final_y);
+    
+    current_x += word1_w;
+  );
+  
+  // Word 2: " to" - appears at word_count >= 2
+  word_count >= 2 ? (
+    gfx_str_measure(" to", word2_w, word2_h);
+    word2_phase = 3.891;
+    word2_drift = sin(time_offset * drift_speed + word2_phase) * drift_depth;
+    
+    final_x = current_x;
+    final_y = yt + b + word2_drift;
+    
+    // Calculate colors based on invert mix
+    outline_r = color_invert;
+    outline_g = color_invert;
+    outline_b = color_invert;
+    
+    text_r = 1 - color_invert;
+    text_g = 1 - color_invert;
+    text_b = 1 - color_invert;
+    
+    // Draw thicker outline
+    gfx_set(outline_r, outline_g, outline_b, 1);
+    outline_thickness = 1.5;
+    gfx_str_draw(" to", final_x - outline_thickness, final_y);
+    gfx_str_draw(" to", final_x + outline_thickness, final_y);
+    gfx_str_draw(" to", final_x, final_y - outline_thickness);
+    gfx_str_draw(" to", final_x, final_y + outline_thickness);
+    gfx_str_draw(" to", final_x - outline_thickness, final_y - outline_thickness);
+    gfx_str_draw(" to", final_x + outline_thickness, final_y - outline_thickness);
+    gfx_str_draw(" to", final_x - outline_thickness, final_y + outline_thickness);
+    gfx_str_draw(" to", final_x + outline_thickness, final_y + outline_thickness);
+    
+    // Main text
+    gfx_set(text_r, text_g, text_b, 1);
+    gfx_str_draw(" to", final_x, final_y);
+    
+    current_x += word2_w;
+  );
+  
+  // Word 3: " Yourself" - appears at word_count >= 3
+  word_count >= 3 ? (
+    gfx_str_measure(" Yourself", word3_w, word3_h);
+    word3_phase = 5.672;
+    word3_drift = sin(time_offset * drift_speed + word3_phase) * drift_depth;
+    
+    final_x = current_x;
+    final_y = yt + b + word3_drift;
+    
+    // Calculate colors based on invert mix
+    outline_r = color_invert;
+    outline_g = color_invert;
+    outline_b = color_invert;
+    
+    text_r = 1 - color_invert;
+    text_g = 1 - color_invert;
+    text_b = 1 - color_invert;
+    
+    // Draw thicker outline
+    gfx_set(outline_r, outline_g, outline_b, 1);
+    outline_thickness = 1.5;
+    gfx_str_draw(" Yourself", final_x - outline_thickness, final_y);
+    gfx_str_draw(" Yourself", final_x + outline_thickness, final_y);
+    gfx_str_draw(" Yourself", final_x, final_y - outline_thickness);
+    gfx_str_draw(" Yourself", final_x, final_y + outline_thickness);
+    gfx_str_draw(" Yourself", final_x - outline_thickness, final_y - outline_thickness);
+    gfx_str_draw(" Yourself", final_x + outline_thickness, final_y - outline_thickness);
+    gfx_str_draw(" Yourself", final_x - outline_thickness, final_y + outline_thickness);
+    gfx_str_draw(" Yourself", final_x + outline_thickness, final_y + outline_thickness);
+    
+    // Main text
+    gfx_set(text_r, text_g, text_b, 1);
+    gfx_str_draw(" Yourself", final_x, final_y);
+  );
+);
