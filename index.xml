@@ -1,6 +1,54 @@
 <?xml version="1.0" encoding="utf-8"?>
 <index version="1" name="TLM JSFX">
   <category name="Effects">
+    <reapack name="Retro Codec Suite (TLM)" type="effect" desc="Vintage gaming console audio compression emulation">
+      <metadata>
+        <description><![CDATA[{\rtf1\ansi
+{\fonttbl\f0\fnil\fcharset0 Tahoma;}
+{\colortbl;\red0\green0\blue0;}
+\f0\fs16
+Authentic emulation of vintage gaming console audio compression formats. Transform your audio with the signature sound of classic gaming hardware.
+Features:
+• 4 Codec Types: N64 VADPCM, IMA ADPCM, 4-bit PCM, PSX ADPCM
+• Period-accurate sample rates (11-44kHz) and bit depths (4-24 bit)
+• Saturation, artifacts intensity, dry/wet mix, and output gain controls
+• Optional anti-aliasing pre-filter and lo-fi character filter
+• Professional GUI with visual feedback and parameter controls
+Codec Types:
+• N64 VADPCM - Nintendo 64's Vector-Adaptive Differential PCM (Ocarina of Time, GoldenEye)
+• IMA ADPCM - Interactive Multimedia Association standard for CD-ROM games
+• 4-bit PCM - Aggressive lo-fi digital artifacts
+• PSX ADPCM - PlayStation 1's format (Final Fantasy VII, Metal Gear Solid)
+Controls:
+• Codec Type - Select compression format
+• Sample Rate - 11kHz, 16kHz, 22kHz, 32kHz (default), 44kHz
+• Bit Depth - 4-bit, 8-bit, 16-bit (default), 24-bit
+• Saturation - Soft saturation for harmonic warmth
+• Artifacts - Control compression artifact intensity
+• Mix - Blend processed and dry signals
+• Output - Master output level (±12dB range, 0dB default)
+• Anti-Aliasing - Pre-filter to reduce aliasing
+• Lo-Fi Filter - Character filter matching target sample rate
+Perfect for chiptune music, lo-fi beats, retro game soundtracks, and experimental sound design.
+}]]></description>
+        <screenshot>https://i.imgur.com/55v0koi.png</screenshot>
+      </metadata>
+      <version name="7.1" author="Thomas LeRoy Meier" time="2025-01-18T00:00:00Z">
+        <source>https://raw.githubusercontent.com/ThomasListens/TLM-JSFX/main/RetroCodecSuite.jsfx</source>
+        <changelog><![CDATA[
+v7.1 - Initial Release
+• 4 authentic codec emulations: N64 VADPCM, IMA ADPCM, 4-bit PCM, PSX ADPCM
+• Period-accurate sample rates (11-44kHz) and bit depths (4-24 bit)
+• Stable artifact processing with normalized gain coefficients
+• Professional custom GUI with dropdown codec selector
+• Visual feedback with stepped sliders for sample rate and bit depth
+• Double-click any slider to reset to default value
+• Optional anti-aliasing and lo-fi filters for authentic retro character
+• Output defaults to 0dB with ±12dB range for gain staging
+• CPU-efficient real-time processing with parameter smoothing
+        ]]></changelog>
+      </version>
+    </reapack>
     <reapack name="Seed Delay (TLM)" type="effect" desc="Multi-tap delay with creative algorithms">
       <metadata>
         <description><![CDATA[{\rtf1\ansi
