@@ -1,7 +1,7 @@
-desc:Retro Codec Suite v7.1 - Authentic Edition
+desc:Retro Codec Suite (TLM)
 tags:n64 psx vadpcm adpcm nintendo playstation retro compression
 version:7.1
-author:Thomas
+author:Thomas LeRoy Meier
 
 // HIDDEN SLIDERS
 slider1:sample_rate_idx=3<0,4,1>-Sample Rate Index
