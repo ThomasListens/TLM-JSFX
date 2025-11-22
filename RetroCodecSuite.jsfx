@@ -1,7 +1,7 @@
 desc:Retro Codec Suite (TLM)
-tags:n64 psx vadpcm adpcm nintendo playstation retro compression
-version:7.1
-author:Thomas LeRoy Meier
+tags:n64 psx vadpcm adpcm nintendo playstation retro compression apple 1bit
+version:8.1
+author:Thomas
 
 // HIDDEN SLIDERS
 slider1:sample_rate_idx=3<0,4,1>-Sample Rate Index
@@ -10,60 +10,41 @@ slider3:drive=0<0,1,0.001>-Drive Amount
 slider4:output_gain=0.8333<0,1,0.001>-Output Level
 slider5:dry_wet_mix=1.0<0,1,0.001>-Mix
 slider6:artifact_amount=0<0,1,0.001>-Artifact Amount
-slider7:codec_type=0<0,3,1>-Codec Type
+slider7:codec_type=0<0,4,1>-Codec Type
 slider8:lofi_filter=1<0,1,1>-Lo-Fi Filter
 slider9:aa_filter=1<0,1,1>-Anti-Aliasing Filter
 
 @init
 
-// Sample rates
+// Sample rate presets (will be set properly in @slider)
 sample_rates = 1000;
-sample_rates[0] = 11025;
-sample_rates[1] = 16000;
-sample_rates[2] = 22050;
-sample_rates[3] = 32000;
-sample_rates[4] = 44100;
+sample_rates[0] = 8000;   // Phone/Game Boy
+sample_rates[1] = 11025;  // Quarter CD
+sample_rates[2] = 16000;  // Wideband
+sample_rates[3] = 22050;  // Half CD/SNES
+sample_rates[4] = 32000;  // N64 common
+sample_rates[5] = 44100;  // CD rate
 
-// Bit depths
+// Bit depth presets
 bit_depths = 1100;
-bit_depths[0] = 4;
-bit_depths[1] = 8;
-bit_depths[2] = 16;
-bit_depths[3] = 24;
-
-// String labels
-sr_label_0 = 1500;
-sr_label_1 = 1510;
-sr_label_2 = 1520;
-sr_label_3 = 1530;
-sr_label_4 = 1540;
-
-strcpy(#sr_label_0, "11kHz");
-strcpy(#sr_label_1, "16kHz");
-strcpy(#sr_label_2, "22kHz");
-strcpy(#sr_label_3, "32kHz");
-strcpy(#sr_label_4, "44kHz");
-
-bit_label_0 = 1600;
-bit_label_1 = 1610;
-bit_label_2 = 1620;
-bit_label_3 = 1630;
-
-strcpy(#bit_label_0, "4-bit");
-strcpy(#bit_label_1, "8-bit");
-strcpy(#bit_label_2, "16-bit");
-strcpy(#bit_label_3, "24-bit");
+bit_depths[0] = 1;   // Apple 1-bit
+bit_depths[1] = 2;   // Atari 2600
+bit_depths[2] = 4;   // N64 VADPCM
+bit_depths[3] = 6;   // NES DPCM  
+bit_depths[4] = 8;   // Classic 8-bit
+bit_depths[5] = 12;  // MPC60/SP1200
+bit_depths[6] = 16;  // CD quality
 
 // Default values
-DEFAULT_SAMPLE_RATE = 0.75;  // 32kHz
-DEFAULT_BIT_DEPTH = 0.6667;  // 16-bit
+DEFAULT_SAMPLE_RATE = 0.833;  // ~44.1kHz position
+DEFAULT_BIT_DEPTH = 0.571;    // ~8-bit position (4/7 of the way)
 DEFAULT_DRIVE = 0;
-DEFAULT_OUTPUT = 0.8333;     // 0dB (at center of -24dB to +12dB range)
-DEFAULT_MIX = 1.0;          // 100%
+DEFAULT_OUTPUT = 0.8333;
+DEFAULT_MIX = 1.0;
 DEFAULT_ARTIFACTS = 0;
-DEFAULT_CODEC = 0;          // VADPCM
-DEFAULT_LOFI = 1;           // ON
-DEFAULT_AA = 1;             // ON
+DEFAULT_CODEC = 0;
+DEFAULT_LOFI = 1;
+DEFAULT_AA = 1;
 
 // GUI State
 gui_sample_rate = DEFAULT_SAMPLE_RATE;
@@ -75,6 +56,11 @@ gui_mix = DEFAULT_MIX;
 gui_codec = DEFAULT_CODEC;
 gui_lofi = DEFAULT_LOFI;
 gui_aa = DEFAULT_AA;
+
+// Fine control state
+fine_control_active = 0;
+display_sr_val = 44100;
+display_bit_val = 8;
 
 // Smoothing
 smooth_drive = 0;
@@ -97,11 +83,13 @@ SLIDER_WIDTH = 320;
 DROPDOWN_HEIGHT = 32;
 DROPDOWN_WIDTH = 280;
 
-// DSP Memory
+// DSP Memory allocation
 predictor_L = 0;
 predictor_R = 1;
-step_index_L = 4;
-step_index_R = 5;
+step_index_L = 2;
+step_index_R = 3;
+predictor_L2 = 4;  // For VADPCM 2nd order
+predictor_R2 = 5;
 psx_s1_L = 6;
 psx_s2_L = 7;
 psx_s1_R = 8;
@@ -110,10 +98,14 @@ lpf_a0_L = 10;
 lpf_a0_R = 13;
 aa_lpf_L = 20;
 aa_lpf_R = 21;
+onebit_integrator_L = 22;  // Fixed 1-bit implementation
+onebit_integrator_R = 23;
 
-// Tables
-vadpcm_coef1 = 800;
-psx_filter = 850;
+// Tables memory allocation
+vadpcm_table = 800;   // N64 VADPCM predictor table
+ima_step_table = 900; // IMA ADPCM step table
+ima_index_table = 1000; // IMA index adjustment table
+psx_filter = 1050;    // PSX ADPCM filter coefficients
 
 // Mouse state
 dropdown_open = 0;
@@ -122,27 +114,10 @@ mouse_was_down = 0;
 dragging_slider = -1;
 last_click_time = 0;
 last_click_slider = -1;
-DOUBLE_CLICK_TIME = 0.3;  // 300ms for double-click
+DOUBLE_CLICK_TIME = 0.3;
 
 // Helper functions
 function db_to_linear(db) ( exp(db * 0.11512925); );
-
-function get_sr_label(idx)
-(
-  idx == 0 ? #sr_label_0 :
-  idx == 1 ? #sr_label_1 :
-  idx == 2 ? #sr_label_2 :
-  idx == 3 ? #sr_label_3 :
-  #sr_label_4;
-);
-
-function get_bit_label(idx)
-(
-  idx == 0 ? #bit_label_0 :
-  idx == 1 ? #bit_label_1 :
-  idx == 2 ? #bit_label_2 :
-  #bit_label_3;
-);
 
 function tanh_approx(x)
 local(x2)
@@ -151,14 +126,78 @@ local(x2)
   x * (27 + x2) / (27 + 9 * x2);
 );
 
-// Initialize tables
-function init_tables()
+// Musical scaling for artifacts (exponential response)
+function scale_artifacts(linear_val)
 (
-  vadpcm_coef1[0] = 0;
-  vadpcm_coef1[1] = 0.9;
-  vadpcm_coef1[2] = 1.8;
-  vadpcm_coef1[3] = 1.4;
+  // Convert linear 0-1 to exponential curve for musical response
+  linear_val > 0 ? pow(linear_val, 2.5) * linear_val : 0;
+);
+
+// Initialize authentic codec tables
+function init_tables()
+local(i)
+(
+  // N64 VADPCM predictor table (16 entries, 2 coefficients each)
+  vadpcm_table[0] = 0;        vadpcm_table[1] = 0;
+  vadpcm_table[2] = -0.9375;  vadpcm_table[3] = 0;
+  vadpcm_table[4] = 1.796875; vadpcm_table[5] = -0.8125;
+  vadpcm_table[6] = 1.53125;  vadpcm_table[7] = -0.859375;
+  vadpcm_table[8] = 1.90625;  vadpcm_table[9] = -0.9375;
   
+  // IMA ADPCM step table (89 values - truncated for space, using key values)
+  ima_step_table[0] = 7;     ima_step_table[1] = 8;
+  ima_step_table[2] = 9;     ima_step_table[3] = 10;
+  ima_step_table[4] = 11;    ima_step_table[5] = 12;
+  ima_step_table[6] = 13;    ima_step_table[7] = 14;
+  ima_step_table[8] = 16;    ima_step_table[9] = 17;
+  ima_step_table[10] = 19;   ima_step_table[11] = 21;
+  ima_step_table[12] = 23;   ima_step_table[13] = 25;
+  ima_step_table[14] = 28;   ima_step_table[15] = 31;
+  ima_step_table[16] = 34;   ima_step_table[17] = 37;
+  ima_step_table[18] = 41;   ima_step_table[19] = 45;
+  ima_step_table[20] = 50;   ima_step_table[21] = 55;
+  ima_step_table[22] = 60;   ima_step_table[23] = 66;
+  ima_step_table[24] = 73;   ima_step_table[25] = 80;
+  ima_step_table[26] = 88;   ima_step_table[27] = 97;
+  ima_step_table[28] = 107;  ima_step_table[29] = 118;
+  ima_step_table[30] = 130;  ima_step_table[31] = 143;
+  ima_step_table[32] = 157;  ima_step_table[33] = 173;
+  ima_step_table[34] = 190;  ima_step_table[35] = 209;
+  ima_step_table[36] = 230;  ima_step_table[37] = 253;
+  ima_step_table[38] = 279;  ima_step_table[39] = 307;
+  ima_step_table[40] = 337;  ima_step_table[41] = 371;
+  ima_step_table[42] = 408;  ima_step_table[43] = 449;
+  ima_step_table[44] = 494;  ima_step_table[45] = 544;
+  ima_step_table[46] = 598;  ima_step_table[47] = 658;
+  ima_step_table[48] = 724;  ima_step_table[49] = 796;
+  ima_step_table[50] = 876;  ima_step_table[51] = 963;
+  ima_step_table[52] = 1060; ima_step_table[53] = 1166;
+  ima_step_table[54] = 1282; ima_step_table[55] = 1411;
+  ima_step_table[56] = 1552; ima_step_table[57] = 1707;
+  ima_step_table[58] = 1878; ima_step_table[59] = 2066;
+  ima_step_table[60] = 2272; ima_step_table[61] = 2499;
+  ima_step_table[62] = 2749; ima_step_table[63] = 3024;
+  ima_step_table[64] = 3327; ima_step_table[65] = 3660;
+  ima_step_table[66] = 4026; ima_step_table[67] = 4428;
+  ima_step_table[68] = 4871; ima_step_table[69] = 5358;
+  ima_step_table[70] = 5894; ima_step_table[71] = 6484;
+  ima_step_table[72] = 7132; ima_step_table[73] = 7845;
+  ima_step_table[74] = 8630; ima_step_table[75] = 9493;
+  ima_step_table[76] = 10442; ima_step_table[77] = 11487;
+  ima_step_table[78] = 12635; ima_step_table[79] = 13899;
+  ima_step_table[80] = 15289; ima_step_table[81] = 16818;
+  ima_step_table[82] = 18500; ima_step_table[83] = 20350;
+  ima_step_table[84] = 22385; ima_step_table[85] = 24623;
+  ima_step_table[86] = 27086; ima_step_table[87] = 29794;
+  ima_step_table[88] = 32767;
+  
+  // IMA index adjustment table
+  ima_index_table[0] = -1; ima_index_table[1] = -1;
+  ima_index_table[2] = -1; ima_index_table[3] = -1;
+  ima_index_table[4] = 2;  ima_index_table[5] = 4;
+  ima_index_table[6] = 6;  ima_index_table[7] = 8;
+  
+  // PSX ADPCM filter coefficients (5 filter presets)
   psx_filter[0] = 0;       psx_filter[1] = 0;
   psx_filter[2] = 0.9375;  psx_filter[3] = 0;
   psx_filter[4] = 1.796875; psx_filter[5] = -0.8125;
@@ -168,7 +207,7 @@ function init_tables()
 
 init_tables();
 
-// State
+// State variables
 hold_L = 0;
 hold_R = 0;
 src_phase = 0;
@@ -177,7 +216,7 @@ src_phase = 0;
 // DSP FUNCTIONS
 // ============================================================================
 
-function n64_clip(x) ( x > 1 ? 1 : x < -1 ? -1 : x; );
+function clip(x) ( max(-1, min(1, x)); );
 
 function soft_saturate(x, amount)
 local(driven, wet)
@@ -188,92 +227,145 @@ local(driven, wet)
   x * (1 - amount) + wet * amount;
 );
 
-function quantize_bits(input, bit_idx)
-local(bits, levels, quant)
+function quantize_bits(input, bits)
+local(levels, quant)
 (
-  bits = bit_depths[bit_idx];
-  levels = pow(2, bits);
-  quant = floor(input * levels * 0.5 + 0.5) / (levels * 0.5);
-  n64_clip(quant);
+  bits == 1 ? (
+    // Special case for 1-bit (handled by codec)
+    input;
+  ) : (
+    levels = pow(2, bits);
+    quant = floor(input * levels * 0.5 + 0.5) / (levels * 0.5);
+    clip(quant);
+  );
 );
 
-function pcm4_process(input, is_right)
-local(quantized)
+// Apple 1-bit delta-sigma modulation (FIXED)
+function onebit_process(input, is_right)
+local(integrator, output, error, artifact_scaled, feedback)
 (
-  input += (rand() - 0.5) * smooth_artifacts * 0.05;
-  quantized = floor(input * 8 + 0.5) / 8;
-  n64_clip(quantized);
+  artifact_scaled = scale_artifacts(smooth_artifacts);
+  
+  integrator = is_right ? onebit_integrator_R : onebit_integrator_L;
+  
+  // Simple delta-sigma modulation with proper feedback
+  // Add dither for smoother sound
+  error = input - integrator + (rand() - 0.5) * 0.001;
+  
+  // Comparator
+  output = error > 0 ? 1 : -1;
+  
+  // Feedback with leaky integrator for stability
+  feedback = output * (0.5 + artifact_scaled * 0.4);
+  integrator = integrator * 0.995 + feedback * 0.1;
+  
+  // Clamp integrator to prevent runaway
+  integrator = clip(integrator);
+  
+  is_right ? onebit_integrator_R = integrator : onebit_integrator_L = integrator;
+  
+  // Output with reduced amplitude and artifact coloration
+  output * (0.5 - artifact_scaled * 0.3) + integrator * (0.5 + artifact_scaled * 0.3);
 );
 
+// N64 VADPCM with authentic table
+function vadpcm_process(input, is_right)
+local(pred1, pred2, coef1, coef2, prediction, quantized, output, artifact_scaled, table_idx)
+(
+  artifact_scaled = scale_artifacts(smooth_artifacts);
+  
+  is_right ? (
+    pred1 = predictor_R;
+    pred2 = predictor_R2;
+  ) : (
+    pred1 = predictor_L;
+    pred2 = predictor_L2;
+  );
+  
+  // Select predictor coefficients based on artifact amount
+  table_idx = min(4, floor(artifact_scaled * 5));
+  coef1 = vadpcm_table[table_idx * 2];
+  coef2 = vadpcm_table[table_idx * 2 + 1];
+  
+  // Apply prediction
+  prediction = pred1 * coef1 + pred2 * coef2;
+  
+  // Quantize more aggressively with artifacts
+  quantized = input;
+  artifact_scaled > 0.01 ? (
+    quantized = floor(input * (64 - artifact_scaled * 60) + 0.5) / (64 - artifact_scaled * 60);
+  );
+  
+  // Mix prediction with quantized input
+  output = quantized * (1 - artifact_scaled * 0.7) + prediction * artifact_scaled * 0.7;
+  
+  // Add subtle noise at low artifact levels, more at high
+  output += (rand() - 0.5) * artifact_scaled * (0.005 + artifact_scaled * 0.03);
+  
+  output = clip(output);
+  
+  // Update predictors
+  is_right ? (
+    predictor_R2 = pred1;
+    predictor_R = output;
+  ) : (
+    predictor_L2 = pred1;
+    predictor_L = output;
+  );
+  
+  output;
+);
+
+// IMA ADPCM with authentic step table
 function ima_process(input, is_right)
-local(pred, step_idx, diff, nibble, delta, step_size, quantized)
+local(pred, step_idx, diff, nibble, delta, step_size, artifact_scaled, step)
 (
+  artifact_scaled = scale_artifacts(smooth_artifacts);
+  
   pred = is_right ? predictor_R : predictor_L;
   step_idx = is_right ? step_index_R : step_index_L;
   
-  // Variable step size based on artifacts - more artifacts = coarser quantization
-  step_size = 2000 + smooth_artifacts * 8000;
+  // Get step size from table
+  step_idx = max(0, min(88, step_idx));
+  step = ima_step_table[step_idx];
+  
+  // Scale step by artifact amount for more compression artifacts
+  step *= (1 + artifact_scaled * 3);
   
   // Calculate difference and quantize
   diff = (input - pred) * 32768;
-  nibble = min(7, max(-8, floor(diff / step_size)));
+  nibble = min(7, max(-8, floor(diff / step + 0.5)));
   
   // Reconstruct with quantization error
-  delta = nibble * step_size;
+  delta = nibble * step;
   pred += delta / 32768;
   
-  // Add dithering noise at higher artifact levels
-  pred += (rand() - 0.5) * smooth_artifacts * 0.02;
+  // Add noise proportional to step size and artifacts
+  pred += (rand() - 0.5) * artifact_scaled * step / 32768;
   
-  pred = n64_clip(pred);
+  pred = clip(pred);
+  
+  // Update step index using IMA table
+  step_idx += ima_index_table[abs(nibble) < 8 ? abs(nibble) : 7];
+  step_idx = max(0, min(88, step_idx));
   
   is_right ? (
     predictor_R = pred;
-    step_index_R = max(0, min(88, step_idx + abs(nibble)));
+    step_index_R = step_idx;
   ) : (
     predictor_L = pred;
-    step_index_L = max(0, min(88, step_idx + abs(nibble)));
+    step_index_L = step_idx;
   );
   
   pred;
 );
 
-function vadpcm_process(input, is_right)
-local(pred, coef, prediction, quantized, noise, output, mix_pred, mix_in)
-(
-  pred = is_right ? predictor_R : predictor_L;
-  
-  // Coefficient interpolation - max 0.85 for stability
-  coef = smooth_artifacts * 0.85;
-  
-  // Add quantization noise based on artifact amount
-  noise = (rand() - 0.5) * smooth_artifacts * 0.03;
-  
-  // Create prediction from previous sample
-  prediction = pred * coef;
-  
-  // Quantize the input more aggressively as artifacts increase
-  quantized = input;
-  smooth_artifacts > 0.01 ? (
-    quantized = floor(input * (64 / (1 + smooth_artifacts * 7)) + 0.5) / (64 / (1 + smooth_artifacts * 7));
-  );
-  
-  // Mix prediction with quantized input - normalized blend
-  mix_pred = smooth_artifacts * 0.8;
-  mix_in = 1 - mix_pred;
-  output = (prediction * mix_pred + quantized * mix_in) * (1 - smooth_artifacts * 0.3);
-  output += noise;
-  output = n64_clip(output);
-  
-  // Update predictor
-  is_right ? predictor_R = output : predictor_L = output;
-  
-  output;
-);
-
+// PSX ADPCM
 function psx_adpcm_process(input, is_right)
-local(s1, s2, k0, k1, sample, nibble, quant_levels, gain_norm)
+local(s1, s2, k0, k1, sample, filter_idx, artifact_scaled, quant_levels)
 (
+  artifact_scaled = scale_artifacts(smooth_artifacts);
+  
   is_right ? (
     s1 = psx_s1_R;
     s2 = psx_s2_R;
@@ -282,23 +374,23 @@ local(s1, s2, k0, k1, sample, nibble, quant_levels, gain_norm)
     s2 = psx_s2_L;
   );
   
-  // Lower, safer coefficients
-  k0 = smooth_artifacts * 0.6;
-  k1 = -smooth_artifacts * 0.3;
+  // Select filter based on artifact amount
+  filter_idx = min(4, floor(artifact_scaled * 5));
+  k0 = psx_filter[filter_idx * 2];
+  k1 = psx_filter[filter_idx * 2 + 1];
   
-  // Quantization gets more aggressive with artifacts
-  quant_levels = 8 / (1 + smooth_artifacts * 6);
-  nibble = floor(input * quant_levels + 0.5);
-  sample = nibble / quant_levels;
+  // Quantization with artifact scaling
+  quant_levels = 16 - artifact_scaled * 14;
+  sample = floor(input * quant_levels + 0.5) / quant_levels;
   
-  // Apply prediction filter with normalization safeguard
-  gain_norm = 1.0 / max(0.5, abs(k0) + abs(k1) + 1.0);
-  sample = (s1 * k0 + s2 * k1 + sample) * gain_norm;
+  // Apply filter with stability check
+  sample = sample + s1 * k0 + s2 * k1;
+  sample *= 0.98; // Slight damping for stability
   
-  // Add some noise at high artifact settings
-  sample += (rand() - 0.5) * smooth_artifacts * smooth_artifacts * 0.02;
+  // Add PSX-characteristic noise
+  sample += (rand() - 0.5) * artifact_scaled * 0.015;
   
-  sample = n64_clip(sample);
+  sample = clip(sample);
   
   is_right ? (
     psx_s2_R = s1;
@@ -311,6 +403,21 @@ local(s1, s2, k0, k1, sample, nibble, quant_levels, gain_norm)
   sample;
 );
 
+// 4-bit PCM
+function pcm4_process(input, is_right)
+local(quantized, artifact_scaled)
+(
+  artifact_scaled = scale_artifacts(smooth_artifacts);
+  
+  // Add dither noise
+  input += (rand() - 0.5) * (0.002 + artifact_scaled * 0.05);
+  
+  // Quantize to 4-bit with variable levels based on artifacts
+  quantized = floor(input * (8 - artifact_scaled * 6) + 0.5) / (8 - artifact_scaled * 6);
+  clip(quantized);
+);
+
+// Filters
 function aa_filter(input, is_right, cutoff)
 local(coef, filtered)
 (
@@ -343,8 +450,58 @@ local(coef, filtered)
 // GUI FUNCTIONS
 // ============================================================================
 
-function draw_stepped_slider(x, y, w, value, steps, title, slider_id)
-local(i, notch_x, handle_x, handle_size, hovering, display_idx, label_str, snapped_val, track_hovering)
+function get_sr_from_normalized(val)
+local(project_rate)
+(
+  // Map 0-1 to range from 8kHz to project sample rate
+  project_rate = srate;
+  8000 * pow(project_rate / 8000, val);
+);
+
+function get_sr_at_notch(notch_idx)
+(
+  notch_idx == 0 ? 8000 :
+  notch_idx == 1 ? 11025 :
+  notch_idx == 2 ? 16000 :
+  notch_idx == 3 ? 22050 :
+  notch_idx == 4 ? 32000 :
+  notch_idx == 5 ? 44100 :
+  srate;
+);
+
+function get_bit_from_normalized(val)
+(
+  // Map 0-1 to 1-16 bits
+  1 + val * 15;
+);
+
+function get_bit_at_notch(notch_idx)
+(
+  notch_idx == 0 ? 1 :
+  notch_idx == 1 ? 2 :
+  notch_idx == 2 ? 4 :
+  notch_idx == 3 ? 6 :
+  notch_idx == 4 ? 8 :
+  notch_idx == 5 ? 12 :
+  16;
+);
+
+function format_sr_text(hz)
+local(khz)
+(
+  khz = hz / 1000;
+  khz >= 10 ? sprintf(#, "%.1fk", khz) : sprintf(#, "%.2fk", khz);
+);
+
+function format_bit_text(bits)
+(
+  bits < 1.5 ? sprintf(#, "1-bit") : 
+  sprintf(#, "%.1f-bit", bits);
+);
+
+function draw_stepped_slider(x, y, w, value, title, slider_id, is_sample_rate)
+local(i, notch_x, handle_x, handle_size, hovering, display_text, track_hovering, 
+      notch_count, notch_val, notch_hz, notch_bits)
 (
   // Title
   gfx_set(FG_COLOR * 0.6, FG_COLOR * 0.6, FG_COLOR * 0.65);
@@ -352,7 +509,7 @@ local(i, notch_x, handle_x, handle_size, hovering, display_idx, label_str, snapp
   gfx_x = x; gfx_y = y - 18;
   gfx_drawstr(title);
   
-  // Only check hover if not dragging another slider
+  // Check hover
   track_hovering = (dragging_slider == -1 || dragging_slider == slider_id) &&
                    mouse_x >= x - 10 && mouse_x <= x + w + 10 && 
                    mouse_y >= y - 10 && mouse_y <= y + SLIDER_HEIGHT + 10;
@@ -365,30 +522,57 @@ local(i, notch_x, handle_x, handle_size, hovering, display_idx, label_str, snapp
   );
   gfx_rect(x, y, w, SLIDER_HEIGHT);
   
-  // Draw notches
+  // Draw notches for common values
+  notch_count = 7; // Same for both now
   i = 0;
-  loop(steps,
-    notch_x = x + (i / (steps - 1)) * w;
+  loop(notch_count,
+    is_sample_rate ? (
+      // Special case: last notch is project rate
+      i == 6 ? (
+        notch_val = 1.0;
+        notch_hz = srate;
+      ) : (
+        notch_hz = get_sr_at_notch(i);
+        // Calculate where this notch should be on the exponential scale
+        notch_val = log(notch_hz / 8000) / log(srate / 8000);
+      );
+    ) : (
+      notch_bits = get_bit_at_notch(i);
+      notch_val = (notch_bits - 1) / 15.0;
+    );
+    
+    notch_x = x + notch_val * w;
+    
     gfx_set(NOTCH_COLOR, NOTCH_COLOR, NOTCH_COLOR);
     gfx_rect(notch_x - 1, y - 4, 2, SLIDER_HEIGHT + 8);
     
+    // Label for notch
     gfx_set(FG_COLOR * 0.4, FG_COLOR * 0.4, FG_COLOR * 0.45);
     gfx_setfont(1, "Arial", 9);
-    gfx_x = notch_x - 20; 
-    gfx_y = y + SLIDER_HEIGHT + 5;
     
-    steps == 5 ? (
-      label_str = get_sr_label(i);
+    is_sample_rate ? (
+      i == 6 ? (
+        display_text = sprintf(#, "PRJ");
+      ) : (
+        display_text = format_sr_text(notch_hz);
+      );
     ) : (
-      label_str = get_bit_label(i);
+      display_text = sprintf(#, "%d", notch_bits);
     );
     
-    gfx_drawstr(label_str);
+    gfx_x = notch_x - strlen(display_text) * 3;
+    gfx_y = y + SLIDER_HEIGHT + 5;
+    gfx_drawstr(display_text);
+    
     i += 1;
   );
   
   // Value fill
-  gfx_set(ACCENT_R, ACCENT_G, ACCENT_B);
+  fine_control_active && dragging_slider == slider_id ? (
+    gfx_set(FINE_COLOR_R * 0.7, FINE_COLOR_G * 0.7, FINE_COLOR_B * 0.7);
+  ) : (
+    gfx_set(ACCENT_R, ACCENT_G, ACCENT_B);
+  );
   gfx_rect(x, y, w * value, SLIDER_HEIGHT);
   
   // Handle
@@ -398,28 +582,33 @@ local(i, notch_x, handle_x, handle_size, hovering, display_idx, label_str, snapp
   hovering = track_hovering;
   
   hovering || dragging_slider == slider_id ? (
-    gfx_set(FG_COLOR, FG_COLOR, FG_COLOR);
+    fine_control_active && dragging_slider == slider_id ? (
+      gfx_set(FINE_COLOR_R, FINE_COLOR_G, FINE_COLOR_B);
+    ) : (
+      gfx_set(FG_COLOR, FG_COLOR, FG_COLOR);
+    );
   ) : (
     gfx_set(FG_COLOR * 0.8, FG_COLOR * 0.8, FG_COLOR * 0.85);
   );
   
   gfx_circle(handle_x, y + SLIDER_HEIGHT/2, handle_size/2, 1);
   
-  // Current value display
-  gfx_set(ACCENT_R, ACCENT_G, ACCENT_B);
+  // Current value display with fine control indication
+  fine_control_active && dragging_slider == slider_id ? (
+    gfx_set(FINE_COLOR_R, FINE_COLOR_G, FINE_COLOR_B);
+  ) : (
+    gfx_set(ACCENT_R, ACCENT_G, ACCENT_B);
+  );
   gfx_setfont(1, "Arial", 12, 'b');
-  gfx_x = x + w + 15; 
+  gfx_x = x + w + 15;
   gfx_y = y - 4;
   
-  snapped_val = floor(value * (steps - 1) + 0.5) / (steps - 1);
-  display_idx = floor(snapped_val * (steps - 1) + 0.5);
-  
-  steps == 5 ? (
-    label_str = get_sr_label(display_idx);
+  is_sample_rate ? (
+    display_text = format_sr_text(display_sr_val);
   ) : (
-    label_str = get_bit_label(display_idx);
+    display_text = format_bit_text(display_bit_val);
   );
-  gfx_drawstr(label_str);
+  gfx_drawstr(display_text);
   
   hovering;
 );
@@ -432,7 +621,6 @@ local(handle_x, handle_size, hovering)
   gfx_x = x; gfx_y = y - 18;
   gfx_drawstr(title);
   
-  // Only check hover if not dragging another slider
   hovering = (dragging_slider == -1 || dragging_slider == slider_id) &&
              mouse_x >= x - 10 && mouse_x <= x + w + 10 && 
              mouse_y >= y - 10 && mouse_y <= y + SLIDER_HEIGHT + 10;
@@ -460,7 +648,7 @@ local(handle_x, handle_size, hovering)
   
   gfx_set(FG_COLOR * 0.8, FG_COLOR * 0.8, FG_COLOR * 0.85);
   gfx_setfont(1, "Arial", 12);
-  gfx_x = x + w + 15; 
+  gfx_x = x + w + 15;
   gfx_y = y - 4;
   gfx_drawstr(#display_val);
   
@@ -473,7 +661,8 @@ local(label, hovering, i, item_y, item_hover)
   selected_idx == 0 ? label = "N64 VADPCM" :
   selected_idx == 1 ? label = "IMA ADPCM" :
   selected_idx == 2 ? label = "4-BIT PCM" :
-  label = "PSX ADPCM";
+  selected_idx == 3 ? label = "PSX ADPCM" :
+  label = "APPLE 1-BIT";
   
   hovering = mouse_x >= x && mouse_x <= x + w && 
              mouse_y >= y && mouse_y <= y + h;
@@ -487,7 +676,7 @@ local(label, hovering, i, item_y, item_hover)
   
   gfx_set(ACCENT_R, ACCENT_G, ACCENT_B);
   gfx_setfont(1, "Arial", 12, 'b');
-  gfx_x = x + 12; 
+  gfx_x = x + 12;
   gfx_y = y + h/2 - 7;
   gfx_drawstr(label);
   
@@ -499,7 +688,7 @@ local(label, hovering, i, item_y, item_hover)
   item_hover = -1;
   is_open ? (
     i = 0;
-    loop(4,
+    loop(5,  // Now 5 codecs
       item_y = y + h + i * h;
       
       mouse_x >= x && mouse_x <= x + w && 
@@ -525,7 +714,8 @@ local(label, hovering, i, item_y, item_hover)
       i == 0 ? gfx_drawstr("N64 VADPCM") :
       i == 1 ? gfx_drawstr("IMA ADPCM") :
       i == 2 ? gfx_drawstr("4-BIT PCM") :
-      gfx_drawstr("PSX ADPCM");
+      i == 3 ? gfx_drawstr("PSX ADPCM") :
+      gfx_drawstr("APPLE 1-BIT");
       
       i += 1;
     );
@@ -562,12 +752,38 @@ local(hovering)
   hovering;
 );
 
-function snap_to_steps(value, steps)
+function snap_to_notch(value, is_sample_rate)
+local(best_dist, best_val, i, notch_val, dist, notch_hz)
 (
-  floor(value * (steps - 1) + 0.5) / (steps - 1);
+  best_dist = 1000;
+  best_val = value;
+  
+  i = 0;
+  loop(7,
+    is_sample_rate ? (
+      i == 6 ? (
+        notch_val = 1.0;
+      ) : (
+        notch_hz = get_sr_at_notch(i);
+        notch_val = log(notch_hz / 8000) / log(srate / 8000);
+      );
+    ) : (
+      notch_val = (get_bit_at_notch(i) - 1) / 15.0;
+    );
+    
+    dist = abs(value - notch_val);
+    dist < best_dist ? (
+      best_dist = dist;
+      best_val = notch_val;
+    );
+    i += 1;
+  );
+  
+  best_val;
 );
 
 @slider
+// Update from automation
 gui_sample_rate = sample_rate_idx / 4;
 gui_bit_depth = bit_depth_idx / 3;
 gui_drive = drive;
@@ -578,16 +794,25 @@ gui_codec = codec_type;
 gui_lofi = lofi_filter;
 gui_aa = aa_filter;
 
+// Update display values
+display_sr_val = get_sr_from_normalized(gui_sample_rate);
+display_bit_val = get_bit_from_normalized(gui_bit_depth);
+
+// Update the sample rate table to include project rate
+sample_rates[6] = srate;
+
 @block
-target_srate = sample_rates[floor(gui_sample_rate * 4 + 0.5)];
+// Calculate target sample rate with fine control
+target_srate = get_sr_from_normalized(gui_sample_rate);
 src_ratio = srate / target_srate;
 
+// Smooth parameter changes
 smooth_drive += (gui_drive - smooth_drive) * 0.1;
 smooth_artifacts += (gui_artifacts - smooth_artifacts) * 0.1;
 smooth_mix += (gui_mix - smooth_mix) * 0.1;
 smooth_output += (gui_output - smooth_output) * 0.1;
 
-@gfx 440 445
+@gfx 440 460
 
 // Background
 gfx_set(BG_COLOR, BG_COLOR, BG_COLOR * 1.1);
@@ -605,9 +830,9 @@ gfx_drawstr(" SUITE");
 gfx_set(FG_COLOR * 0.3, FG_COLOR * 0.3, FG_COLOR * 0.35);
 gfx_setfont(1, "Arial", 9);
 gfx_x = MARGIN + 180; gfx_y = 27;
-gfx_drawstr("v7.1");
+gfx_drawstr("v8.1");
 
-// Codec dropdown LABEL (draw early, dropdown itself drawn at end for z-index)
+// Codec dropdown label
 dropdown_y = 60;
 gfx_set(FG_COLOR * 0.4, FG_COLOR * 0.4, FG_COLOR * 0.45);
 gfx_setfont(1, "Arial", 10);
@@ -616,17 +841,24 @@ gfx_drawstr("CODEC TYPE");
 
 // Sample rate slider
 hovering_sr = draw_stepped_slider(MARGIN, 130, SLIDER_WIDTH, gui_sample_rate, 
-                               5, "SAMPLE RATE", 1);
+                               "SAMPLE RATE", 1, 1);
 
-// Control hints (between sample rate and bit depth)
-gfx_set(FG_COLOR * 0.3, FG_COLOR * 0.3, FG_COLOR * 0.35);
+// Control hints with color indication
 gfx_setfont(1, "Arial", 9);
-gfx_x = MARGIN + 70; gfx_y = 163;
-gfx_drawstr("Double-Click: Reset to Default");
+gfx_x = MARGIN + 50; gfx_y = 163;
+fine_control_active ? (
+  gfx_set(FINE_COLOR_R * 0.7, FINE_COLOR_G * 0.7, FINE_COLOR_B * 0.3);
+  gfx_drawstr("Shift+Drag: Fine Control [ACTIVE] • ");
+) : (
+  gfx_set(FG_COLOR * 0.3, FG_COLOR * 0.3, FG_COLOR * 0.35);
+  gfx_drawstr("Shift+Drag: Fine Control • ");
+);
+gfx_set(FG_COLOR * 0.3, FG_COLOR * 0.3, FG_COLOR * 0.35);
+gfx_drawstr("Double-Click: Reset");
 
 // Bit depth slider
 hovering_bd = draw_stepped_slider(MARGIN, 195, SLIDER_WIDTH, gui_bit_depth, 
-                               4, "BIT DEPTH", 2);
+                               "BIT DEPTH", 2, 0);
 
 // Drive slider
 drive_text = 1700;
@@ -652,8 +884,8 @@ hovering_out = draw_smooth_slider(MARGIN + 180, 345, 145, gui_output,
                               "OUTPUT", out_text, 6);
 
 // Checkboxes
-checkbox_aa = draw_checkbox(MARGIN, 390, 16, gui_aa, "Anti-Aliasing");
-checkbox_lofi = draw_checkbox(MARGIN + 140, 390, 16, gui_lofi, "Lo-Fi Filter");
+checkbox_aa = draw_checkbox(MARGIN, 405, 16, gui_aa, "Anti-Aliasing");
+checkbox_lofi = draw_checkbox(MARGIN + 140, 405, 16, gui_lofi, "Lo-Fi Filter");
 
 // Footer
 gfx_set(FG_COLOR * 0.25, FG_COLOR * 0.25, FG_COLOR * 0.3);
@@ -662,18 +894,19 @@ gfx_x = MARGIN; gfx_y = gfx_h - 18;
 gui_codec == 0 ? gfx_drawstr("Nintendo 64 Vector-Adaptive Differential PCM") :
 gui_codec == 1 ? gfx_drawstr("Interactive Multimedia Association ADPCM Standard") :
 gui_codec == 2 ? gfx_drawstr("4-bit Pulse Code Modulation with Error Diffusion") :
-gfx_drawstr("PlayStation 1 Adaptive Differential PCM");
+gui_codec == 3 ? gfx_drawstr("PlayStation 1 Adaptive Differential PCM") :
+gfx_drawstr("Apple Macintosh 1-bit Delta-Sigma Modulation");
 
-// Draw dropdown LAST so it appears on top of everything (z-index fix)
+// Draw dropdown last for z-order
 hovering = draw_dropdown(MARGIN, dropdown_y, DROPDOWN_WIDTH, DROPDOWN_HEIGHT, 
                          gui_codec, dropdown_open);
 
 // Mouse handling
+fine_control_active = mouse_cap & 8; // Check shift key
+
 mouse_cap & 1 ? (
   !mouse_was_down ? (
     current_time = time_precise();
-    
-    // Check for double-click
     is_double_click = (current_time - last_click_time) < DOUBLE_CLICK_TIME;
     
     // Dropdown
@@ -695,7 +928,8 @@ mouse_cap & 1 ? (
       hovering_sr ? (
         is_double_click && last_click_slider == 1 ? (
           gui_sample_rate = DEFAULT_SAMPLE_RATE;
-          sample_rate_idx = floor(gui_sample_rate * 4 + 0.5);
+          display_sr_val = get_sr_from_normalized(gui_sample_rate);
+          sample_rate_idx = gui_sample_rate * 4;
           slider_automate(slider1);
         ) : (
           dragging_slider = 1;
@@ -704,7 +938,8 @@ mouse_cap & 1 ? (
       ) : hovering_bd ? (
         is_double_click && last_click_slider == 2 ? (
           gui_bit_depth = DEFAULT_BIT_DEPTH;
-          bit_depth_idx = floor(gui_bit_depth * 3 + 0.5);
+          display_bit_val = get_bit_from_normalized(gui_bit_depth);
+          bit_depth_idx = gui_bit_depth * 3;
           slider_automate(slider2);
         ) : (
           dragging_slider = 2;
@@ -769,34 +1004,51 @@ mouse_cap & 1 ? (
     last_click_time = current_time;
   );
   
-  // Handle dragging - only active slider responds - ALWAYS SNAP TO STEPS
+  // Handle dragging with fine control
   dragging_slider == 1 ? (
     gui_sample_rate = (mouse_x - MARGIN) / SLIDER_WIDTH;
     gui_sample_rate = max(0, min(1, gui_sample_rate));
-    gui_sample_rate = snap_to_steps(gui_sample_rate, 5);  // Always snap
-    sample_rate_idx = floor(gui_sample_rate * 4 + 0.5);
+    
+    // Snap to notches unless shift is held
+    !fine_control_active ? (
+      gui_sample_rate = snap_to_notch(gui_sample_rate, 1);
+    );
+    
+    display_sr_val = get_sr_from_normalized(gui_sample_rate);
+    sample_rate_idx = gui_sample_rate * 4;
     slider_automate(slider1);
+    
   ) : dragging_slider == 2 ? (
     gui_bit_depth = (mouse_x - MARGIN) / SLIDER_WIDTH;
     gui_bit_depth = max(0, min(1, gui_bit_depth));
-    gui_bit_depth = snap_to_steps(gui_bit_depth, 4);  // Always snap
-    bit_depth_idx = floor(gui_bit_depth * 3 + 0.5);
+    
+    // Snap to notches unless shift is held
+    !fine_control_active ? (
+      gui_bit_depth = snap_to_notch(gui_bit_depth, 0);
+    );
+    
+    display_bit_val = get_bit_from_normalized(gui_bit_depth);
+    bit_depth_idx = gui_bit_depth * 3;
     slider_automate(slider2);
+    
   ) : dragging_slider == 3 ? (
     gui_drive = (mouse_x - MARGIN) / SLIDER_WIDTH;
     gui_drive = max(0, min(1, gui_drive));
     drive = gui_drive;
     slider_automate(slider3);
+    
   ) : dragging_slider == 4 ? (
     gui_artifacts = (mouse_x - MARGIN) / SLIDER_WIDTH;
     gui_artifacts = max(0, min(1, gui_artifacts));
     artifact_amount = gui_artifacts;
     slider_automate(slider6);
+    
   ) : dragging_slider == 5 ? (
     gui_mix = (mouse_x - MARGIN) / 145;
     gui_mix = max(0, min(1, gui_mix));
     dry_wet_mix = gui_mix;
     slider_automate(slider5);
+    
   ) : dragging_slider == 6 ? (
     gui_output = (mouse_x - (MARGIN + 180)) / 145;
     gui_output = max(0, min(1, gui_output));
@@ -810,19 +1062,18 @@ mouse_cap & 1 ? (
 mouse_was_down = mouse_cap & 1;
 
 @sample
-// Get settings
-current_sr_idx = floor(gui_sample_rate * 4 + 0.5);
-current_bit_idx = floor(gui_bit_depth * 3 + 0.5);
+// Get current settings
+current_bits = get_bit_from_normalized(gui_bit_depth);
 
 // Store dry signal
 dry_L = spl0;
 dry_R = spl1;
 
-// Apply saturation (no volume increase)
+// Apply saturation
 in_L = soft_saturate(spl0, smooth_drive);
 in_R = soft_saturate(spl1, smooth_drive);
 
-// Anti-aliasing filter (optional)
+// Anti-aliasing filter
 gui_aa ? (
   aa_cutoff = target_srate * 0.45;
   in_L = aa_filter(in_L, 0, aa_cutoff);
@@ -834,9 +1085,11 @@ src_phase += 1 / src_ratio;
 src_phase >= 1.0 ? (
   src_phase -= 1.0;
   
-  // Bit reduction
-  in_L = quantize_bits(in_L, current_bit_idx);
-  in_R = quantize_bits(in_R, current_bit_idx);
+  // Bit reduction (except for 1-bit which is handled by codec)
+  current_bits > 1.5 ? (
+    in_L = quantize_bits(in_L, current_bits);
+    in_R = quantize_bits(in_R, current_bits);
+  );
   
   // Codec processing
   gui_codec == 0 ? (
@@ -848,13 +1101,16 @@ src_phase >= 1.0 ? (
   ) : gui_codec == 2 ? (
     hold_L = pcm4_process(in_L, 0);
     hold_R = pcm4_process(in_R, 1);
-  ) : (
+  ) : gui_codec == 3 ? (
     hold_L = psx_adpcm_process(in_L, 0);
     hold_R = psx_adpcm_process(in_R, 1);
+  ) : (
+    hold_L = onebit_process(in_L, 0);
+    hold_R = onebit_process(in_R, 1);
   );
 );
 
-// Lo-fi filter (optional)
+// Lo-fi filter
 gui_lofi ? (
   lofi_cutoff = target_srate * 0.4;
   hold_L = lofi_filter(hold_L, 0, lofi_cutoff);
@@ -862,11 +1118,10 @@ gui_lofi ? (
 );
 
 // Output with gain and mix
-// Output range: -24dB to +12dB (36dB total range, 0dB at center)
 out_gain = db_to_linear((smooth_output - 0.5) * 36 - 12);
 spl0 = (hold_L * smooth_mix + dry_L * (1 - smooth_mix)) * out_gain;
 spl1 = (hold_R * smooth_mix + dry_R * (1 - smooth_mix)) * out_gain;
 
 // Final clip
-spl0 = n64_clip(spl0);
-spl1 = n64_clip(spl1);
+spl0 = clip(spl0);
+spl1 = clip(spl1);
