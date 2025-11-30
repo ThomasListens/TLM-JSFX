@@ -1,9 +1,9 @@
 # TLM-JSFX
-My JSFX plugins for REAPER. I'm just getting started but am commited long term to improving these tools and creating new fx in my pursuit to make more music. 
+My JSFX plugins for REAPER. I am commited long term to improving these tools and creating new fx in my pursuit to make more music. 
 
 ## Retro Codec Suite
 
-Authentic emulation of vintage gaming console audio compression formats. Transform your audio with the signature sound of classic gaming hardware.
+Authentic emulation of retro compression formats. Add charcter to your audio with the signature sound of classic gaming hardware.
 
 ![Retro Codec Suite Interface](https://i.imgur.com/55v0koi.png)
 
