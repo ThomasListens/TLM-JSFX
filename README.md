@@ -1,8 +1,6 @@
 # TLM-JSFX 
-https://raw.githubusercontent.com/ThomasListens/TLM-JSFX/main/index.xml
-
 My JSFX plugins for REAPER. I am commited long term to improving these tools and creating new fx in my pursuit to make more music. 
-
+repo link: https://raw.githubusercontent.com/ThomasListens/TLM-JSFX/main/index.xml
 ## Retro Codec Suite
 
 Authentic emulation of retro compression formats. Add charcter to your audio with the signature sound of classic gaming hardware.
