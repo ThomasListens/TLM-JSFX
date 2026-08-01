@@ -1,0 +1,3327 @@
+desc:MonoDrum - Just Intonation Drum Synth
+author: thomas meier
+version: 1.11
+// @changelog
+//   + five MATHEMATICAL STRUCTURE presets, where the tuning IS the patch:
+//     Spiral of Fifths (12 Pythagorean steps, pure 3-limit - every stem
+//     blue), Euler Genus 105 (the divisor lattice of 3*5*7, octave-
+//     reduced), Otonal Nine (harmonics 8-16 as a chord), Superparticular
+//     Cascade (n+1/n ratios condensing toward the fundamental), and
+//     Fibonacci Bloom (Fibonacci-numbered harmonics with golden-ratio
+//     staggered decays)
+//   + six new presets. Solid: JI Cowbell (two squares a pure 3/2 apart,
+//     808-style), JI Clap (bandpassed noise burst), 808 Boom (long swept
+//     sub with growl). Creative: Gamelan Ombak (paired partials detuned a
+//     few cents for the slow beating of paired gamelan instruments),
+//     Prime Octave Chime (every prime through 31 folded into one octave -
+//     watch the spectrum), Water Drop (negative pitch env = upward chirp)
+//   + two cymbal presets: JI Hi-Hat (ring of cross-FM squares + HP noise,
+//     808-style) and JI Ride Cymbal (self-FM shimmer over high-prime modes)
+//   ~ FIX: presets now fully define FM routing. preset_silence_all cleared
+//     saturation but not FM, so FM depths leaked from one preset into the
+//     next (load a clangy patch then Sub Kick -> clangy kick)
+//   ~ FIX: accidental-transposition guards. The mouse wheel on log knobs
+//     (esp. Hz) moved ~10% per notch - an idle trackpad scroll over the
+//     knob could silently retune the whole synth. Log-knob wheel steps are
+//     now ~1 semitone-scale (range/100), and the NOTE knob snaps to whole
+//     semitones (a fractional NOTE was a hidden detune trap in Hz mode).
+//     Tip: ctrl-click any knob restores its default; the spectrum header's
+//     "1/1 = x Hz" readout is the tuning truth at a glance
+//   ~ FIX: LFO amplitude modulation is now slewed (2 ms). Square and Random
+//     (S&H) shapes step instantly - an instant gain step is a click, so
+//     AMP depth on those shapes crackled on every LFO cycle. The slew kills
+//     the clicks; the steppy character is preserved. Pitch modulation stays
+//     hard-stepped (frequency jumps are phase-continuous - no click there)
+//   ~ renamed: Monochord Drum -> MonoDrum
+//   ~ FIX: PLAY previously gated its note for a fixed 250 ms, so in GATE
+//     mode it could never demonstrate a decay longer than that (a 5 s DEC
+//     sounded like a blip). PLAY now holds through the full attack + decay
+//     (capped at 10 s), then releases
+//   + spectrum stems stay thick but are solid again - glow columns and the
+//     breathing background are removed
+//   AMP ENV audit:
+//   ~ FIX: in ONE-SHOT mode the decay now always falls to silence. Before,
+//     1SHOT with SUS > 0 droned forever (note-off is ignored, so nothing
+//     could ever stop the voice)
+//   + SUS and REL dim in 1SHOT mode (they are inert without note-off),
+//     and their hover help states the mode dependency
+//   VISUAL LIFT:
+//   + thicker spectrum stems (3 px) with wider caps - easier to see and grab
+//   + each partial casts a soft glow column in its prime color: faint at
+//     rest, blooming with that partial's live envelope on every hit
+//   + panel background breathes subtly with the output level
+//   CRITICAL FIX: the spectrum's loops used `i` as their counter — the same
+//   variable @sample's partial loop uses. JSFX shares all variables between
+//   the @gfx thread and the audio thread, so while a note played the two
+//   threads corrupted each other's loop index: audio glitches + spectrum
+//   stems jumping to wrong positions. Spectrum loops now use a gfx-only
+//   counter (sp_i), matching the gi / i_ev discipline of the rest of the UI.
+//   FIRST-RUN FRIENDLINESS:
+//   + fresh state starts with partials 17-32 muted (one click to add them);
+//     Harmonic / Sub-Harmonic presets and RESET ALL match
+//   + spectrum frames only sounding partials - the default view is tight
+//   + inert routing now LOOKS inert: PE fields dim while PITCH ENV depth
+//     is 0, L1/L2 dim while that LFO's depths are 0, FM source dims at
+//     depth 0 - nothing reads as "wired up" until it actually does something
+//   AUDIO STABILITY PASS - click & pop elimination:
+//   + click-free retrigger: fast 1.5 ms voice-steal fade before each new hit
+//     (fixes pops when hits overlap, esp. RST phase mode + fast rolls)
+//   + 2 ms gain smoothing on master, noise, click, and every partial gain -
+//     removes zipper noise and mute/unmute pops during live edits
+//   + partials swept past Nyquist by the pitch envelope now fade out
+//     instead of hard-gating (fixes crackle on extreme pitch sweeps)
+//   + PLAY preview latches its note, so moving NOTE mid-preview can no
+//     longer leave a hung voice in GATE mode
+//   + spectrum auto-focuses on the occupied frequency range (smoothed zoom)
+//     with Hz labels on the octave gridlines
+//   + per-partial SATURATION view: drive + odd/even blend. Shaping a sine
+//     adds integer multiples of its own frequency, so the result stays JI
+//   ~ presets and partial reset clear saturation
+//   + spectrum is now interactive: click/drag a stem to set its volume,
+//     right-click to mute, mouse wheel +/- 1 dB, ctrl-click resets to 1/n
+//   + prime-limit coloring: stems and ratio text are colored by the largest
+//     prime in the ratio (legend in the spectrum header)
+//   + hovering a stem shows the prime factorization of its ratio
+//   + LFOs moved up beside the noise/click channels; spectrum grew taller
+//   + live SPECTRUM view: partial layout on a log-frequency axis, with
+//     per-partial envelope animation, octave gridlines, and hover inspect
+//   + output peak meter
+//   + grouped section panels, larger knobs and labels, roomier layout
+//   + PLAY button / SPACE key: preview the sound without a MIDI keyboard
+//   + "?" button / H key: quick-reference overlay of every shortcut
+//   + mouse wheel adjusts knobs and partial volume bars
+//   + hover help now covers partial cells (ratios shown in cents)
+//   + amber dot marks partials currently used as FM sources
+// @about
+//   # MonoDrum
+//   32-partial additive drum synth for just intonation / microtonal work,
+//   with per-partial decay, pitch-envelope follow, two assignable LFOs,
+//   and partial-to-partial FM. Press "?" in the UI for the full shortcut
+//   list, or hover any control for inline help.
+options:want_all_kb
+
+// 32-oscillator additive sine bank for microtonal / JI drum work.
+//
+// All sliders hidden from the strip via leading "-" in the name; the @gfx
+// panel is the primary interface. Sliders remain accessible via REAPER's
+// "+ Param" parameter window and via automation.
+//
+// QUICK REFERENCE (press "?" or H in the UI for the same list):
+//   - SPACE / PLAY button       preview the sound (no MIDI needed)
+//   - mouse wheel               adjust the knob / volume bar under cursor
+//   - right-click partial #     menu (detune, octave, PE, reset)
+//   - click partial #           mute (red); click again to unmute
+//   - drag volume bar           set that partial's level
+//   - ctrl-click volume bar     reset to 1/n default
+//   - right-click volume bar    mute toggle
+//   - drag cell field           vertical drag adjusts decay / PE / LFO / FM
+//   - Tab / Shift-Tab in edit   cycle through cell fields
+//   - ctrl-click knob           snap to default
+//   - shift-drag knob           4x fine sensitivity
+//
+// SUB KICK TWEAK GUIDE (after loading "Sub Kick (clean)"):
+//   - more boom:   partial 1 decay -> 700, PITCH ENV DEPTH -> -24
+//   - tighter:     AMP DEC -> 150, partial decays scaled to ~ half preset
+//   - more click:  enable CLICK CHANNEL, LEN 2ms, GAIN -18 to -10
+//   - sub follow:  partial 2 PE -> 1 (sub octave tracks the sweep)
+//   - more body:   ratio 1/1 amp -> 0 dB, raise master GAIN
+
+slider1:69<0,127,1>-MIDI Note
+slider2:0<-200,200,0.01>-Fine Tune (cents)
+slider3:0<0,1,1{MIDI Note,Hz Override}>-Mode
+slider4:440<20,8000,0.001>-Hz Override
+
+slider6:5<0.1,5000,0.1>-Amp Attack (ms)
+slider7:200<0.1,5000,0.1>-Amp Decay (ms)
+slider8:0.8<0,1,0.001>-Amp Sustain
+slider9:400<1,10000,1>-Amp Release (ms)
+
+slider11:0<-36,36,0.01>-Pitch Env Depth (st)
+slider12:5<0,2000,0.1>-Pitch Env Attack (ms)
+slider13:200<1,5000,1>-Pitch Env Decay (ms)
+
+slider15:-6<-60,12,0.1>-Master Gain (dB)
+slider16:1<0,1,1{Off,On}>-Auto-Normalize Partials
+slider17:0<0,24,0.1>-Output Drive (dB)
+
+slider18:0<0,100,1>-Velocity -> Decay (%)
+slider19:0<0,100,1>-Velocity -> Pitch Env (%)
+
+slider20:0<0,1,1{Off,On}>-Noise Channel On
+slider21:-12<-80,0,0.1>-Noise Gain (dB)
+slider22:1<0.1,1000,0.1>-Noise Attack (ms)
+slider23:80<1,5000,1>-Noise Decay (ms)
+slider24:8000<20,20000,1>-Noise LP (Hz)
+slider25:200<20,20000,1>-Noise HP (Hz)
+
+slider26:0<0,1,1{Off,On}>-Click Channel On
+slider27:-18<-80,0,0.1>-Click Gain (dB)
+slider28:3<0.1,30,0.1>-Click Length (ms)
+
+slider29:0<0,1,1{Reset,Free}>-Phase Mode
+
+slider30:0<0,1,1{Gate,One-Shot}>-Trigger Mode
+
+slider31:1<0.05,30,0.001>-LFO 1 Rate (Hz)
+slider32:0<0,3,1{Sine,Triangle,Square,Random}>-LFO 1 Shape
+slider33:0<0,100,0.1>-LFO 1 Pitch Depth (cents)
+slider34:0<0,1,0.001>-LFO 1 Amp Depth
+
+slider35:2.5<0.05,30,0.001>-LFO 2 Rate (Hz)
+slider36:1<0,3,1{Sine,Triangle,Square,Random}>-LFO 2 Shape
+slider37:0<0,100,0.1>-LFO 2 Pitch Depth (cents)
+slider38:0<0,1,0.001>-LFO 2 Amp Depth
+
+slider40:0<0,3,1{Basic,LFO,FM,Saturation}>-Cell View Mode
+
+in_pin:none
+out_pin:Left
+out_pin:Right
+
+@init
+ext_noinit = 1;
+
+NUM_OSC = 32;
+twopi = 2 * $pi;
+nyq_inc = $pi;
+nyq_fade_start = nyq_inc * 0.9;   // fade zone: top 10% below Nyquist
+nyq_fade_inv = 1 / (nyq_inc * 0.1);
+DB_MIN = -80;
+DB_MAX = 0;
+NUM_MIN = 0.001;
+NUM_MAX = 1024;
+PE_EPS = 0.001;
+TINY = 0.000000001;
+EVT_MAX = 256;
+CENTS_TO_LIN = 0.000577623;  // small-angle approx of ln(2)/1200 for cheap pitch mod
+
+// ============================================================================
+// MEMORY LAYOUT — FREEMEM PATTERN (Geraint Luff style)
+// ============================================================================
+// Each subsystem requests its slots via a setup function that takes the
+// current freemem pointer and returns the next free address. This means:
+//   1. Adding a new subsystem appends to the end — never collides with old slots
+//   2. There are no hardcoded addresses that get out of date
+//   3. Loading a project saved with an older version is safe — the layout
+//      is recomputed at @init, and @serialize uses the variable names so
+//      data flows into the right arrays regardless of where they live.
+// Variable names (phase, numer, etc.) are unchanged — only the addresses
+// they refer to are now computed instead of hardcoded.
+
+function setup_partials(fm) local()
+(
+  phase            = fm; fm += NUM_OSC;
+  ratio_val        = fm; fm += NUM_OSC;
+  amp_db           = fm; fm += NUM_OSC;
+  amp_lin          = fm; fm += NUM_OSC;
+  mute_save        = fm; fm += NUM_OSC;
+  numer            = fm; fm += NUM_OSC;
+  denom            = fm; fm += NUM_OSC;
+  detune_cents     = fm; fm += NUM_OSC;
+  detune_factor    = fm; fm += NUM_OSC;
+  decay_time       = fm; fm += NUM_OSC;
+  decay_factor     = fm; fm += NUM_OSC;
+  osc_amp          = fm; fm += NUM_OSC;
+  penv_amount      = fm; fm += NUM_OSC;
+  eff_decay_factor = fm; fm += NUM_OSC;
+  fm;
+);
+
+function setup_lfo(fm) local()
+(
+  lfo1_amt = fm; fm += NUM_OSC;
+  lfo2_amt = fm; fm += NUM_OSC;
+  fm;
+);
+
+function setup_fm_routing(fm) local()
+(
+  fm_src   = fm; fm += NUM_OSC;
+  fm_depth = fm; fm += NUM_OSC;
+  mod_sin  = fm; fm += NUM_OSC;     // runtime cache, always re-zeroed
+  is_mod   = fm; fm += NUM_OSC;     // runtime flag,  always re-zeroed
+  fm;
+);
+
+function setup_saturation(fm) local()
+(
+  sat_amt = fm; fm += NUM_OSC;   // per-partial drive, 0..1
+  sat_mix = fm; fm += NUM_OSC;   // 0 = even harmonics, 1 = odd
+  fm;
+);
+
+function setup_smoothing(fm) local()
+(
+  amp_lin_s = fm; fm += NUM_OSC; // 2 ms smoothed copy of amp_lin (audio side)
+  fm;
+);
+
+function setup_midi_queue(fm) local()
+(
+  // Each event takes 4 cells: [sample_offset, m1, m2, m3]
+  midi_evt = fm; fm += EVT_MAX * 4;
+  fm;
+);
+
+freemem = 0;
+freemem = setup_partials(freemem);
+freemem = setup_lfo(freemem);
+freemem = setup_fm_routing(freemem);
+freemem = setup_midi_queue(freemem);
+freemem = setup_saturation(freemem);
+freemem = setup_smoothing(freemem);
+// freemem now points to the first unallocated slot. Future data subsystems
+// append here. Currently uses 1664 slots.
+
+// Strings live in JSFX's user-string slot space (0-1023), which is a SEPARATE
+// namespace from data memory. Slot ID 100 as a string and slot 100 as data
+// are completely independent — they do not collide. We use small slot IDs
+// far below the 1024 ceiling.
+str_edit       = 100;
+str_tmp        = 101;
+str_tmp2       = 102;
+str_hover_lbl  = 103;
+str_hover_desc = 104;
+str_fac        = 105;
+
+// fresh-memory init
+numer[0] < NUM_MIN ? (
+  i = 0;
+  loop(NUM_OSC,
+    numer[i] = i + 1;
+    denom[i] = 1;
+    detune_cents[i] = 0;
+    decay_time[i] = 0;
+    penv_amount[i] = 1;
+    lfo1_amt[i] = 1;
+    lfo2_amt[i] = 1;
+    fm_src[i] = 0;
+    fm_depth[i] = 0;
+    sat_amt[i] = 0;
+    sat_mix[i] = 1;
+    mod_sin[i] = 0;
+    mute_save[i] = -999;
+    i == 0 ? amp_db[i] = 0 : amp_db[i] = -20 * log(i + 1) / log(10);
+    // partials 17-32 start muted: a simpler first-run state, one click to add
+    i >= 16 ? ( mute_save[i] = amp_db[i]; amp_db[i] = DB_MIN; );
+    i += 1;
+  );
+);
+
+// Defensive re-init for fields that may have been added in newer versions.
+// When a project saved with an older plugin version is loaded, @serialize
+// only restores fields that existed back then — newer arrays may contain
+// stale memory values (or NaN) that would break audio. Force them safe.
+// @serialize runs AFTER @init, so saved values still take precedence.
+i = 0;
+loop(NUM_OSC,
+  // sanity-clamp anything that could be NaN/inf/garbage from stale memory
+  (fm_src[i] < 0 || fm_src[i] >= NUM_OSC || fm_src[i] != fm_src[i]) ? fm_src[i] = 0;
+  (fm_depth[i] < 0 || fm_depth[i] > 10 || fm_depth[i] != fm_depth[i]) ? fm_depth[i] = 0;
+  (lfo1_amt[i] < 0 || lfo1_amt[i] > 1 || lfo1_amt[i] != lfo1_amt[i]) ? lfo1_amt[i] = 1;
+  (lfo2_amt[i] < 0 || lfo2_amt[i] > 1 || lfo2_amt[i] != lfo2_amt[i]) ? lfo2_amt[i] = 1;
+  (sat_amt[i] < 0 || sat_amt[i] > 1 || sat_amt[i] != sat_amt[i]) ? sat_amt[i] = 0;
+  (sat_mix[i] < 0 || sat_mix[i] > 1 || sat_mix[i] != sat_mix[i]) ? sat_mix[i] = 1;
+  // pure runtime state — always zero, never serialized
+  phase[i] = 0;
+  mod_sin[i] = 0;
+  is_mod[i] = 0;
+  osc_amp[i] = 1;
+  eff_decay_factor[i] = 1;
+  i += 1;
+);
+
+// derived state recompute
+i = 0;
+sum_amp = 0;
+loop(NUM_OSC,
+  detune_factor[i] = pow(2, detune_cents[i] / 1200);
+  ratio_val[i] = numer[i] / max(denom[i], NUM_MIN);
+  amp_db[i] <= DB_MIN ? amp_lin[i] = 0 : amp_lin[i] = pow(10, amp_db[i] / 20);
+  osc_amp[i] = 1;
+  eff_decay_factor[i] = 1;
+  sum_amp += amp_lin[i];
+  i += 1;
+);
+(slider16 == 1 && sum_amp > 0) ? (
+  norm = 1 / sum_amp;
+  i = 0;
+  loop(NUM_OSC, amp_lin[i] *= norm; i += 1;);
+);
+
+// seed the smoothed per-partial gains so the first note doesn't fade in
+i = 0;
+loop(NUM_OSC, amp_lin_s[i] = amp_lin[i]; i += 1;);
+
+// envelopes
+env_state = 0; env_val = 0;
+// base_inc/base_freq are otherwise only assigned in fire_note. Their only read
+// sits behind env_state > 0 so this is currently unreachable, but it was the
+// one piece of state the init block left undefined.
+base_inc = 0; base_freq = 0;
+penv_state = 0; penv_val = 0;
+velocity = 1;
+note_on_pitch = -1;
+note_pitch_offset = 0;
+base_hz = 440;
+master_lin = 0.5;
+eff_penv_depth = 0;
+pend_note = 0;            // note waiting behind a voice-steal fade
+pend_vel = 0;
+pend_active = 0;
+master_lin_s = 0.5;       // smoothed gains (audio-thread side)
+n_lin_s = 0;
+click_lin_s = 0;
+smooth_k = 0.01;          // 2 ms one-pole coeff, recomputed from srate
+steal_inc = 0.02;         // 1.5 ms steal-fade slope, recomputed from srate
+
+// noise/click
+n_env_state = 0;
+n_env_val = 0;
+n_lp_state = 0;
+n_hp_y = 0;
+n_hp_x = 0;
+click_amp = 0;
+click_dec_factor = 0;
+
+// LFO runtime
+lfo1_phase = 0;
+lfo2_phase = 0;
+lfo1_rand = 0;
+lfo2_rand = 0;
+lfo1_inc = 0;
+lfo2_inc = 0;
+lfo1_pitch_lin = 0;
+lfo2_pitch_lin = 0;
+lfo1_active = 0;
+lfo2_active = 0;
+lfo1_amod_s = 0;   // slewed amp-mod values (see @sample)
+lfo2_amod_s = 0;
+fm_active = 0;
+
+// UI state
+editing_field = 0;
+edit_pristine = 0;
+drag_amp_idx = -1;
+amp_dirty = 0;
+last_mouse_cap = 0;
+g_parse_v = 0;
+knob_drag_id = -1;
+knob_drag_start_y = 0;
+knob_drag_start_val = 0;
+knob_drag_fine = 0;
+knob_global_changed = 0;
+hover_kid = -1;
+gui_trig_note = 0;       // set by PLAY button / SPACE, consumed in @block
+gui_noteoff_pending = -1; // countdown (samples) to the preview note-off
+gui_note_pitch = 69;      // pitch latched when PLAY fires (note-off must match)
+show_help = 0;            // "?" quick-reference overlay
+vis_peak = 0;             // per-frame output peak, written in @sample
+vis_peak_disp = 0;        // smoothed meter value (gfx side)
+spec_drag_idx = -1;       // partial being volume-dragged in the spectrum
+spec_lo_s = 0;            // smoothed spectrum view range (log Hz); 0 = snap
+spec_hi_s = 0;
+
+// cell-field drag (decay / PE in partial cells)
+cell_drag_id = -1;
+cell_drag_start_y = 0;
+cell_drag_start_val = 0;
+cell_drag_active = 0;
+cell_drag_fine = 0;
+CELL_DRAG_THRESH = 3;
+
+// sample-accurate MIDI dispatch (Saike-style)
+// midi_evt was allocated in setup_midi_queue(); these are just runtime counters.
+midi_evt_count = 0;
+midi_evt_idx = 0;
+sample_pos = 0;
+
+// voice culling — kill DSP work when output has been silent long enough
+silent_count = 0;
+SILENCE_THRESH = 0.000001;
+SILENCE_FRAMES = 4800;       // GATE release: 50 ms — recomputed from srate
+SILENCE_FRAMES_LONG = 96000; // 1SHOT hold:   1 s — recomputed from srate
+last_srate = 0;             // detect sample-rate change (audio device switch)
+
+// ============================================================
+// HELPERS
+// ============================================================
+
+function recompute_amp() local(i, sum_amp, db, norm)
+(
+  i = 0;
+  sum_amp = 0;
+  loop(NUM_OSC,
+    db = amp_db[i];
+    db <= DB_MIN ? amp_lin[i] = 0 : amp_lin[i] = pow(10, db / 20);
+    sum_amp += amp_lin[i];
+    i += 1;
+  );
+  (slider16 == 1 && sum_amp > 0) ? (
+    norm = 1 / sum_amp;
+    i = 0;
+    loop(NUM_OSC, amp_lin[i] *= norm; i += 1;);
+  );
+);
+
+function update_ratio(idx) local() (ratio_val[idx] = numer[idx] / max(denom[idx], NUM_MIN););
+function update_detune(idx) local() (detune_factor[idx] = pow(2, detune_cents[idx] / 1200););
+function update_decay(idx) local()
+(
+  decay_time[idx] > 0 ? (
+    decay_factor[idx] = exp(-1 / (decay_time[idx] * 0.001 * srate));
+  ) : (
+    decay_factor[idx] = 1;
+  );
+);
+
+// local(i, src_i): this is called from @gfx (knob_global_changed, in the
+// control panel) as well as @slider/@block. Without i and src_i declared local
+// they are globals shared with @sample's partial loop, so a knob drag during a
+// sounding note could reset the audio thread's loop counter mid-loop. Same
+// class of bug as the gfx-loop counters fixed in v1.10; this one was missed.
+function recompute_envelopes() local(i, src_i)
+(
+  slider3 == 0 ? (
+    base_hz = 440 * pow(2, (slider1 - 69) / 12 + slider2 / 1200);
+  ) : (
+    base_hz = slider4 * pow(2, slider2 / 1200);
+  );
+  atk_inc = 1 / max(1, slider6 * 0.001 * srate);
+  dec_inc = 1 / max(1, slider7 * 0.001 * srate);
+  sus_lvl = slider8;
+  rel_inc = 1 / max(1, slider9 * 0.001 * srate);
+  penv_atk_inc = 1 / max(1, slider12 * 0.001 * srate);
+  penv_dec_inc = 1 / max(1, slider13 * 0.001 * srate);
+  penv_depth = slider11;
+  master_lin = pow(10, slider15 / 20);
+  drive_lin = pow(10, slider17 / 20);
+  inv_drive_lin = drive_lin > 1 ? 1 / drive_lin : 1;
+  vel_decay_amt = slider18 * 0.01;
+  vel_penv_amt = slider19 * 0.01;
+  n_lin = (slider20 > 0.5) ? pow(10, slider21 / 20) : 0;
+  n_atk_inc = 1 / max(1, slider22 * 0.001 * srate);
+  n_dec_factor = exp(-1 / max(1, slider23 * 0.001 * srate));
+  n_lp_a = 1 - exp(-2 * $pi * slider24 / srate);
+  n_hp_alpha = exp(-2 * $pi * slider25 / srate);
+  click_lin = (slider26 > 0.5) ? pow(10, slider27 / 20) : 0;
+  click_dec_factor = exp(-1 / max(1, slider28 * 0.001 * srate));
+
+  // click-suppression rates
+  smooth_k = 1 - exp(-1 / (0.002 * srate));   // 2 ms gain smoothing
+  steal_inc = 1 / max(1, 0.0015 * srate);     // 1.5 ms voice-steal fade
+
+  // LFO rate (radians per sample) and active flags
+  lfo1_inc = twopi * slider31 / srate;
+  lfo2_inc = twopi * slider35 / srate;
+  // small-angle pitch contribution: depth_cents * CENTS_TO_LIN
+  lfo1_pitch_lin = slider33 * CENTS_TO_LIN;
+  lfo2_pitch_lin = slider37 * CENTS_TO_LIN;
+  // active = any depth > 0; lets us skip mod math entirely when LFO is unused
+  lfo1_active = (slider33 > 0 || slider34 > 0) ? 1 : 0;
+  lfo2_active = (slider37 > 0 || slider38 > 0) ? 1 : 0;
+
+  // FM active = any partial has nonzero modulation depth
+  fm_active = 0;
+  i = 0;
+  loop(NUM_OSC,
+    fm_depth[i] > 0 ? fm_active = 1;
+    i += 1;
+  );
+
+  // Track which partials are used as FM sources. Phase must keep advancing
+  // for these even when their amp is 0 (e.g. user muted the partial because
+  // they want it to act as a pure modulator without direct audio output).
+  i = 0;
+  loop(NUM_OSC, is_mod[i] = 0; i += 1;);
+  fm_active ? (
+    i = 0;
+    loop(NUM_OSC,
+      fm_depth[i] > 0 ? (
+        src_i = floor(fm_src[i]);
+        src_i >= 0 && src_i < NUM_OSC ? is_mod[src_i] = 1;
+      );
+      i += 1;
+    );
+  );
+);
+
+function set_volume(idx, db) local() ( amp_db[idx] = db; recompute_amp(); );
+
+function commit_field_edit() local(idx, fid)
+(
+  fid = editing_field;
+  g_parse_v = -1;
+  match("%{g_parse_v}f", str_edit);
+  fid >= 1 && fid <= 32 ? (
+    idx = fid - 1;
+    g_parse_v >= NUM_MIN && g_parse_v <= NUM_MAX ? ( numer[idx] = g_parse_v; update_ratio(idx); );
+  ) : fid >= 33 && fid <= 64 ? (
+    idx = fid - 33;
+    g_parse_v >= NUM_MIN && g_parse_v <= NUM_MAX ? ( denom[idx] = g_parse_v; update_ratio(idx); );
+  ) : fid >= 65 && fid <= 96 ? (
+    idx = fid - 65;
+    g_parse_v >= 0 && g_parse_v <= 60000 ? ( decay_time[idx] = g_parse_v; update_decay(idx); );
+  ) : fid >= 97 && fid <= 128 ? (
+    idx = fid - 97;
+    g_parse_v >= -4 && g_parse_v <= 4 ? ( penv_amount[idx] = g_parse_v; );
+  ) : fid >= 129 && fid <= 160 ? (
+    idx = fid - 129;
+    g_parse_v >= 0 && g_parse_v <= 1 ? ( lfo1_amt[idx] = g_parse_v; );
+  ) : fid >= 161 && fid <= 192 ? (
+    idx = fid - 161;
+    g_parse_v >= 0 && g_parse_v <= 1 ? ( lfo2_amt[idx] = g_parse_v; );
+  ) : fid >= 193 && fid <= 224 ? (
+    idx = fid - 193;
+    // fm_src is 1-indexed in UI, internal 0-indexed
+    g_parse_v >= 1 && g_parse_v <= NUM_OSC ? ( fm_src[idx] = floor(g_parse_v) - 1; );
+  ) : fid >= 225 && fid <= 256 ? (
+    idx = fid - 225;
+    g_parse_v >= 0 && g_parse_v <= 10 ? ( fm_depth[idx] = g_parse_v; );
+  ) : fid >= 257 && fid <= 288 ? (
+    idx = fid - 257;
+    g_parse_v >= 0 && g_parse_v <= 1 ? ( sat_amt[idx] = g_parse_v; );
+  ) : fid >= 289 && fid <= 320 ? (
+    idx = fid - 289;
+    g_parse_v >= 0 && g_parse_v <= 1 ? ( sat_mix[idx] = g_parse_v; );
+  );
+  editing_field = 0;
+  edit_pristine = 0;
+);
+
+function begin_field_edit(fid) local(idx)
+(
+  editing_field > 0 ? commit_field_edit();
+  editing_field = fid;
+  edit_pristine = 1;
+  fid >= 1 && fid <= 32 ? ( idx = fid - 1; sprintf(str_edit, "%g", numer[idx]); )
+  : fid >= 33 && fid <= 64 ? ( idx = fid - 33; sprintf(str_edit, "%g", denom[idx]); )
+  : fid >= 65 && fid <= 96 ? ( idx = fid - 65; sprintf(str_edit, "%g", decay_time[idx]); )
+  : fid >= 97 && fid <= 128 ? ( idx = fid - 97; sprintf(str_edit, "%g", penv_amount[idx]); )
+  : fid >= 129 && fid <= 160 ? ( idx = fid - 129; sprintf(str_edit, "%g", lfo1_amt[idx]); )
+  : fid >= 161 && fid <= 192 ? ( idx = fid - 161; sprintf(str_edit, "%g", lfo2_amt[idx]); )
+  : fid >= 193 && fid <= 224 ? ( idx = fid - 193; sprintf(str_edit, "%d", floor(fm_src[idx]) + 1); )
+  : fid >= 225 && fid <= 256 ? ( idx = fid - 225; sprintf(str_edit, "%g", fm_depth[idx]); )
+  : fid >= 257 && fid <= 288 ? ( idx = fid - 257; sprintf(str_edit, "%g", sat_amt[idx]); )
+  : fid >= 289 && fid <= 320 ? ( idx = fid - 289; sprintf(str_edit, "%g", sat_mix[idx]); );
+);
+
+// next_field cycles through visible cell fields. Tab order depends on view mode:
+//   BASIC: numer -> denom -> decay   -> PE       -> next partial's numer
+//   LFO:   numer -> denom -> L1      -> L2       -> next partial's numer
+//   FM:    numer -> denom -> fm_src  -> fm_depth -> next partial's numer
+function next_field(fid, reverse) local(idx, result, view)
+(
+  result = 0;
+  // view: 0 = BASIC, 1 = LFO, 2 = FM
+  view = slider40 < 0.5 ? 0 : slider40 < 1.5 ? 1 : slider40 < 2.5 ? 2 : 3;
+  fid >= 1 && fid <= 32 ? (
+    idx = fid - 1;
+    reverse ? result = ((idx - 1 + 32) % 32) + (view == 0 ? 97 : view == 1 ? 161 : view == 2 ? 225 : 289) : result = idx + 33;
+  ) : fid >= 33 && fid <= 64 ? (
+    idx = fid - 33;
+    reverse ? result = idx + 1 : result = idx + (view == 0 ? 65 : view == 1 ? 129 : view == 2 ? 193 : 257);
+  ) : fid >= 65 && fid <= 96 ? (
+    idx = fid - 65;
+    reverse ? result = idx + 33 : result = idx + 97;
+  ) : fid >= 97 && fid <= 128 ? (
+    idx = fid - 97;
+    reverse ? result = idx + 65 : result = ((idx + 1) % 32) + 1;
+  ) : fid >= 129 && fid <= 160 ? (
+    idx = fid - 129;
+    reverse ? result = idx + 33 : result = idx + 161;
+  ) : fid >= 161 && fid <= 192 ? (
+    idx = fid - 161;
+    reverse ? result = idx + 129 : result = ((idx + 1) % 32) + 1;
+  ) : fid >= 193 && fid <= 224 ? (
+    idx = fid - 193;
+    reverse ? result = idx + 33 : result = idx + 225;
+  ) : fid >= 225 && fid <= 256 ? (
+    idx = fid - 225;
+    reverse ? result = idx + 193 : result = ((idx + 1) % 32) + 1;
+  ) : fid >= 257 && fid <= 288 ? (
+    idx = fid - 257;
+    reverse ? result = idx + 33 : result = idx + 289;
+  ) : fid >= 289 && fid <= 320 ? (
+    idx = fid - 289;
+    reverse ? result = idx + 257 : result = ((idx + 1) % 32) + 1;
+  );
+  result;
+);
+
+// ---------------- value formatting ----------------
+
+function _format_val(val, fmt, suffix) local()
+(
+  fmt == 0 ? sprintf(str_tmp, "%.0f%s", val, suffix)
+  : fmt == 1 ? sprintf(str_tmp, "%.1f%s", val, suffix)
+  : fmt == 2 ? sprintf(str_tmp, "%.2f%s", val, suffix)
+  : fmt == 3 ? (
+    val <= -79.9 ? sprintf(str_tmp, "OFF") : sprintf(str_tmp, "%.1f dB", val);
+  ) : fmt == 4 ? (
+    val >= 1000 ? sprintf(str_tmp, "%.1fk", val / 1000) : sprintf(str_tmp, "%.0f Hz", val);
+  ) : fmt == 5 ? (
+    val >= 1000 ? sprintf(str_tmp, "%.2f s", val / 1000) : sprintf(str_tmp, "%.0f ms", val);
+  ) : sprintf(str_tmp, "%g", val);
+);
+
+// ---------------- knob (linear OR logarithmic) ----------------
+//
+// is_log = 1 maps drag exponentially over [vmin..vmax]. Use for time params
+// (atk/dec/rel) so the bottom 100 ms doesn't compress into a few pixels.
+
+function knob(kx, ky, val, kid, vmin, vmax, vdef, label, fmt, suffix, is_log)
+local(cx, cy, r, hover, new_val, dy, sens, sens_div,
+      norm, ang, ix, iy, tw, th, ti, ka, wsteps,
+      log_min, log_max, log_val, log_start, log_range, new_log_val)
+(
+  cx = kx + knob_w * 0.5;
+  cy = ky + 24;
+  r = 16;
+
+  hover = (mx - cx) * (mx - cx) + (my - cy) * (my - cy) < (r + 2) * (r + 2);
+  hover ? hover_kid = kid;
+
+  is_log ? (
+    log_min = log(max(vmin, TINY));
+    log_max = log(max(vmax, TINY));
+    log_val = log(max(val, exp(log_min)));
+    norm = (log_val - log_min) / max(0.0001, log_max - log_min);
+  ) : (
+    norm = (val - vmin) / max(0.0001, (vmax - vmin));
+  );
+  norm = max(0, min(1, norm));
+  ang = (7 * $pi / 6) - (4 * $pi / 3) * norm;
+
+  // backing disc
+  hover ? gfx_set(0.18, 0.20, 0.24, 1) : gfx_set(0.13, 0.13, 0.16, 1);
+  gfx_circle(cx, cy, r, 1, 1);
+  gfx_set(0.25, 0.27, 0.32, 1);
+  gfx_circle(cx, cy, r, 0, 1);
+
+  // tick ring
+  gfx_set(0.30, 0.32, 0.36, 1);
+  ti = 0;
+  loop(11,
+    ka = (7 * $pi / 6) - (4 * $pi / 3) * (ti / 10);
+    gfx_line(cx + cos(ka) * (r - 1), cy - sin(ka) * (r - 1), cx + cos(ka) * (r + 1), cy - sin(ka) * (r + 1));
+    ti += 1;
+  );
+
+  // active arc
+  knob_drag_id == kid ? gfx_set(1.0, 0.78, 0.40, 1) : (hover ? gfx_set(0.55, 0.92, 1.0, 1) : gfx_set(0.42, 0.78, 0.92, 1));
+  ti = 0;
+  loop(11,
+    (ti / 10) <= norm ? (
+      ka = (7 * $pi / 6) - (4 * $pi / 3) * (ti / 10);
+      gfx_line(cx + cos(ka) * (r - 1), cy - sin(ka) * (r - 1), cx + cos(ka) * (r + 1), cy - sin(ka) * (r + 1));
+    );
+    ti += 1;
+  );
+
+  // pointer
+  ix = cx + cos(ang) * (r - 4);
+  iy = cy - sin(ang) * (r - 4);
+  knob_drag_id == kid ? gfx_set(1.0, 0.85, 0.55, 1) : (hover ? gfx_set(0.80, 0.95, 1.0, 1) : gfx_set(0.65, 0.85, 0.95, 1));
+  gfx_line(cx, cy, ix, iy);
+
+  // label
+  gfx_setfont(3, "Arial", 10);
+  gfx_set(0.62, 0.62, 0.68, 1);
+  gfx_measurestr(label, tw, th);
+  gfx_x = kx + (knob_w - tw) / 2;
+  gfx_y = ky + 42;
+  gfx_drawstr(label);
+
+  // value readout
+  gfx_setfont(3, "Arial", 10);
+  knob_drag_id == kid ? gfx_set(1.0, 0.92, 0.70, 1) : (hover ? gfx_set(0.95, 0.95, 0.98, 1) : gfx_set(0.78, 0.82, 0.86, 1));
+  _format_val(val, fmt, suffix);
+  gfx_measurestr(str_tmp, tw, th);
+  gfx_x = kx + (knob_w - tw) / 2;
+  gfx_y = ky + 52;
+  gfx_drawstr(str_tmp);
+
+  // interaction
+  new_val = val;
+  hover && mleft_clk && knob_drag_id == -1 && !ctrl_held ? (
+    knob_drag_id = kid;
+    knob_drag_start_y = my;
+    knob_drag_start_val = val;
+    knob_drag_fine = (mouse_cap & 8) ? 1 : 0;
+    click_consumed = 1;
+  );
+  hover && mleft_clk && ctrl_held ? ( new_val = vdef; click_consumed = 1; );
+  hover && mright_clk ? ( new_val = vdef; click_consumed = 1; );
+  knob_drag_id == kid ? (
+    !mleft_down ? ( knob_drag_id = -1; ) : (
+      dy = knob_drag_start_y - my;
+      sens_div = knob_drag_fine ? 800 : 200;
+      is_log ? (
+        log_start = log(max(knob_drag_start_val, exp(log_min)));
+        log_range = log_max - log_min;
+        new_log_val = log_start + dy * (log_range / sens_div);
+        new_log_val = max(log_min, min(log_max, new_log_val));
+        new_val = exp(new_log_val);
+      ) : (
+        sens = (vmax - vmin) / sens_div;
+        new_val = knob_drag_start_val + dy * sens;
+        new_val = max(vmin, min(vmax, new_val));
+      );
+    );
+  );
+
+  // mouse wheel — one notch nudges the hovered knob (log-aware)
+  hover && knob_drag_id == -1 && mouse_wheel != 0 ? (
+    wsteps = mouse_wheel / 120;
+    is_log ? (
+      new_val = exp(max(log_min, min(log_max,
+        log(max(new_val, exp(log_min))) + wsteps * (log_max - log_min) / 100)));
+    ) : (
+      new_val = max(vmin, min(vmax, new_val + wsteps * (vmax - vmin) / 100));
+    );
+    mouse_wheel = 0;
+  );
+
+  new_val;
+);
+
+function toggle_btn(kx, ky, val, kid, label, label_off, label_on)
+local(bx, by, bw, bh, hover, new_val, tw, th)
+(
+  bx = kx + (knob_w - 40) / 2;
+  by = ky + 12;
+  bw = 40;
+  bh = 24;
+  hover = mx >= bx && mx < bx + bw && my >= by && my < by + bh;
+  hover ? hover_kid = kid;
+
+  val > 0 ? (hover ? gfx_set(0.20, 0.40, 0.34, 1) : gfx_set(0.16, 0.30, 0.26, 1);)
+         : (hover ? gfx_set(0.22, 0.22, 0.26, 1) : gfx_set(0.14, 0.14, 0.17, 1););
+  gfx_rect(bx, by, bw, bh);
+
+  val > 0 ? gfx_set(0.55, 0.92, 0.78, 1) : gfx_set(0.32, 0.34, 0.38, 1);
+  gfx_line(bx, by, bx + bw - 1, by);
+  gfx_line(bx, by + bh - 1, bx + bw - 1, by + bh - 1);
+  gfx_line(bx, by, bx, by + bh - 1);
+  gfx_line(bx + bw - 1, by, bx + bw - 1, by + bh - 1);
+
+  gfx_setfont(3, "Arial", 10);
+  val > 0 ? gfx_set(0.85, 1.0, 0.92, 1) : gfx_set(0.55, 0.55, 0.60, 1);
+  val > 0 ? gfx_measurestr(label_on, tw, th) : gfx_measurestr(label_off, tw, th);
+  gfx_x = bx + (bw - tw) / 2;
+  gfx_y = by + (bh - th) / 2;
+  val > 0 ? gfx_drawstr(label_on) : gfx_drawstr(label_off);
+
+  gfx_setfont(3, "Arial", 10);
+  gfx_set(0.62, 0.62, 0.68, 1);
+  gfx_measurestr(label, tw, th);
+  gfx_x = kx + (knob_w - tw) / 2;
+  gfx_y = ky + 42;
+  gfx_drawstr(label);
+
+  new_val = val;
+  hover && mleft_clk ? ( new_val = val > 0 ? 0 : 1; click_consumed = 1; );
+  new_val;
+);
+
+// cycle_btn: like toggle_btn but cycles through N options. The labels are
+// passed as an offset into a global string array (via str_idx_for_state).
+// Returns the new state. Click advances; right-click goes backward.
+function cycle_btn(kx, ky, val, kid, label, n_states)
+local(bx, by, bw, bh, hover, new_val, tw, th, state_int)
+(
+  bx = kx + (knob_w - 40) / 2;
+  by = ky + 12;
+  bw = 40;
+  bh = 24;
+  hover = mx >= bx && mx < bx + bw && my >= by && my < by + bh;
+  hover ? hover_kid = kid;
+
+  state_int = floor(val + 0.5);
+  state_int = max(0, min(n_states - 1, state_int));
+
+  hover ? gfx_set(0.20, 0.20, 0.24, 1) : gfx_set(0.13, 0.13, 0.16, 1);
+  gfx_rect(bx, by, bw, bh);
+  gfx_set(0.45, 0.50, 0.55, 1);
+  gfx_line(bx, by, bx + bw - 1, by);
+  gfx_line(bx, by + bh - 1, bx + bw - 1, by + bh - 1);
+  gfx_line(bx, by, bx, by + bh - 1);
+  gfx_line(bx + bw - 1, by, bx + bw - 1, by + bh - 1);
+
+  // state label — string literals directly, no string-slot indirection.
+  // This currently only supports LFO shapes (4 states). If we add more
+  // cycle_btn use cases with different label sets, we'll branch on kid.
+  gfx_setfont(3, "Arial", 10);
+  hover ? gfx_set(0.95, 0.95, 0.98, 1) : gfx_set(0.78, 0.82, 0.86, 1);
+  state_int == 0 ? gfx_measurestr("SIN", tw, th)
+  : state_int == 1 ? gfx_measurestr("TRI", tw, th)
+  : state_int == 2 ? gfx_measurestr("SQR", tw, th)
+  : gfx_measurestr("RND", tw, th);
+  gfx_x = bx + (bw - tw) / 2;
+  gfx_y = by + (bh - th) / 2;
+  state_int == 0 ? gfx_drawstr("SIN")
+  : state_int == 1 ? gfx_drawstr("TRI")
+  : state_int == 2 ? gfx_drawstr("SQR")
+  : gfx_drawstr("RND");
+
+  // section sub-label below — `label` is a string literal passed in
+  gfx_setfont(3, "Arial", 10);
+  gfx_set(0.62, 0.62, 0.68, 1);
+  gfx_measurestr(label, tw, th);
+  gfx_x = kx + (knob_w - tw) / 2;
+  gfx_y = ky + 42;
+  gfx_drawstr(label);
+
+  new_val = state_int;
+  hover && mleft_clk ? ( new_val = (state_int + 1) % n_states; click_consumed = 1; );
+  hover && mright_clk ? ( new_val = (state_int + n_states - 1) % n_states; click_consumed = 1; );
+  new_val;
+);
+
+// brighter, more prominent section header bar
+function section_header(sx, sy, sw, txt, accent_r, accent_g, accent_b)
+local(tw, th)
+(
+  // group panel behind the controls — visually clusters each section
+  gfx_set(0.125, 0.13, 0.155, 1);
+  gfx_rect(sx - 6, sy + 8, sw + 12, 70);
+  // accent strip along the panel's top edge
+  gfx_set(accent_r, accent_g, accent_b, 0.55);
+  gfx_rect(sx - 6, sy + 8, sw + 12, 2);
+  gfx_setfont(3, "Arial", 11);
+  gfx_set(accent_r * 1.4 + 0.2, accent_g * 1.4 + 0.2, accent_b * 1.4 + 0.2, 1);
+  gfx_measurestr(txt, tw, th);
+  gfx_x = sx + (sw - tw) / 2;
+  gfx_y = sy - 3;
+  gfx_drawstr(txt);
+);
+
+function section_divider(dx, dy, dh) local()
+(
+  gfx_set(0.18, 0.18, 0.22, 1);
+  gfx_line(dx, dy, dx, dy + dh);
+);
+
+// ---------------- prime-limit helpers ----------------
+// JI convention: color intervals by the largest prime in the ratio.
+
+function prime_limit(nv) local(n, p, lim)
+(
+  n = floor(nv + 0.5);
+  n < 1 ? 0 : (
+    lim = 1;
+    p = 2;
+    while (p * p <= n) (
+      n % p == 0 ? (
+        lim = p;
+        while (n % p == 0) ( n = floor(n / p); );
+      );
+      p += 1;
+    );
+    n > 1 ? lim = n;
+    lim <= 1 ? lim = 2;   // n was 1 -> treat as 2-limit (pure 1/1)
+    lim;
+  );
+);
+
+// combined limit of a partial's ratio; 0 = non-integer (uncolored)
+function ratio_prime_limit(idx) local()
+(
+  (floor(numer[idx]) == numer[idx] && floor(denom[idx]) == denom[idx]
+   && numer[idx] >= 1 && denom[idx] >= 1) ? (
+    max(prime_limit(numer[idx]), prime_limit(denom[idx]));
+  ) : 0;
+);
+
+// appends the prime factorization of n to string `dest`, e.g. "2^3*3"
+function factor_append(n_in, dest) local(n, p, cnt, first)
+(
+  n = floor(n_in + 0.5);
+  n <= 1 ? strcat(dest, "1") : (
+    first = 1;
+    p = 2;
+    while (p <= n) (
+      n % p == 0 ? (
+        cnt = 0;
+        while (n % p == 0) ( n = floor(n / p); cnt += 1; );
+        first ? first = 0 : strcat(dest, "*");
+        cnt > 1 ? sprintf(str_tmp2, "%d^%d", p, cnt) : sprintf(str_tmp2, "%d", p);
+        strcat(dest, str_tmp2);
+      );
+      p += 1;
+    );
+  );
+);
+
+// prime -> color. bright scales intensity (ghost stems pass < 1).
+function set_prime_color(plim, bright) local()
+(
+  plim == 0  ? gfx_set(0.60 * bright, 0.60 * bright, 0.65 * bright, 1)   // non-integer
+  : plim <= 2 ? gfx_set(0.85 * bright, 0.88 * bright, 0.92 * bright, 1)  // 2: white
+  : plim == 3 ? gfx_set(0.40 * bright, 0.75 * bright, 0.95 * bright, 1)  // 3: blue
+  : plim == 5 ? gfx_set(0.45 * bright, 0.90 * bright, 0.55 * bright, 1)  // 5: green
+  : plim == 7 ? gfx_set(0.98 * bright, 0.65 * bright, 0.30 * bright, 1)  // 7: orange
+  : plim == 11 ? gfx_set(0.75 * bright, 0.55 * bright, 0.98 * bright, 1) // 11: violet
+  : plim == 13 ? gfx_set(0.98 * bright, 0.50 * bright, 0.75 * bright, 1) // 13: pink
+  : plim == 17 ? gfx_set(0.95 * bright, 0.90 * bright, 0.40 * bright, 1) // 17: yellow
+  : gfx_set(0.90 * bright, 0.40 * bright, 0.40 * bright, 1)              // 19+: red
+);
+
+// ============================================================
+// PRESETS
+// ============================================================
+
+function preset_silence_all() local(i)
+(
+  i = 0;
+  loop(NUM_OSC,
+    numer[i] = i + 1; denom[i] = 1;
+    detune_cents[i] = 0; decay_time[i] = 0;
+    penv_amount[i] = 1;
+    sat_amt[i] = 0; sat_mix[i] = 1;
+    fm_src[i] = 0; fm_depth[i] = 0;
+    amp_db[i] = DB_MIN; mute_save[i] = -999;
+    update_ratio(i); update_detune(i); update_decay(i);
+    i += 1;
+  );
+);
+
+function preset_set(idx, n, d, db, dec, pe) local()
+(
+  numer[idx] = n; denom[idx] = d;
+  decay_time[idx] = dec; penv_amount[idx] = pe;
+  amp_db[idx] = db; detune_cents[idx] = 0;
+  mute_save[idx] = -999;
+  update_ratio(idx); update_detune(idx); update_decay(idx);
+);
+
+function preset_globals_drum(amp_dec_ms, p_depth, p_dec_ms) local()
+(
+  slider6 = 1; slider7 = amp_dec_ms; slider8 = 0; slider9 = max(amp_dec_ms, 200);
+  slider11 = p_depth; slider12 = 1; slider13 = p_dec_ms;
+  slider30 = 1;  // ONE-SHOT for drum semantics
+  slider_automate(slider6); slider_automate(slider7); slider_automate(slider8); slider_automate(slider9);
+  slider_automate(slider11); slider_automate(slider12); slider_automate(slider13);
+  slider_automate(slider30);
+  recompute_envelopes();
+);
+
+function preset_globals_musical() local()
+(
+  slider6 = 5; slider7 = 200; slider8 = 0.8; slider9 = 400; slider11 = 0;
+  slider30 = 0;  // GATE for tonal/sustained playing
+  slider_automate(slider6); slider_automate(slider7); slider_automate(slider8);
+  slider_automate(slider9); slider_automate(slider11); slider_automate(slider30);
+  recompute_envelopes();
+);
+
+function preset_noise(enable, gain_db, atk_ms, dec_ms, lp_hz, hp_hz) local()
+(
+  slider20 = enable;
+  slider21 = gain_db; slider22 = atk_ms; slider23 = dec_ms; slider24 = lp_hz; slider25 = hp_hz;
+  slider_automate(slider20); slider_automate(slider21); slider_automate(slider22);
+  slider_automate(slider23); slider_automate(slider24); slider_automate(slider25);
+  recompute_envelopes();
+);
+
+function preset_click(enable, gain_db, len_ms) local()
+(
+  slider26 = enable;
+  slider27 = gain_db; slider28 = len_ms;
+  slider_automate(slider26); slider_automate(slider27); slider_automate(slider28);
+  recompute_envelopes();
+);
+
+function preset_harmonic() local(i)
+(
+  i = 0;
+  loop(NUM_OSC,
+    numer[i] = i + 1; denom[i] = 1;
+    detune_cents[i] = 0; decay_time[i] = 0; penv_amount[i] = 1;
+    sat_amt[i] = 0; sat_mix[i] = 1;
+    fm_src[i] = 0; fm_depth[i] = 0;
+    update_ratio(i); update_detune(i); update_decay(i);
+    i == 0 ? amp_db[i] = 0 : amp_db[i] = -20 * log(i + 1) / log(10);
+    mute_save[i] = -999;
+    i >= 16 ? ( mute_save[i] = amp_db[i]; amp_db[i] = DB_MIN; );
+    i += 1;
+  );
+  preset_globals_musical();
+  preset_noise(0, -12, 1, 80, 8000, 200);
+  preset_click(0, -18, 3);
+  recompute_amp();
+);
+
+function preset_sub_series() local(i)
+(
+  i = 0;
+  loop(NUM_OSC,
+    numer[i] = 1; denom[i] = i + 1;
+    detune_cents[i] = 0; decay_time[i] = 0; penv_amount[i] = 1;
+    sat_amt[i] = 0; sat_mix[i] = 1;
+    fm_src[i] = 0; fm_depth[i] = 0;
+    update_ratio(i); update_detune(i); update_decay(i);
+    i == 0 ? amp_db[i] = 0 : amp_db[i] = -20 * log(i + 1) / log(10);
+    mute_save[i] = -999;
+    i >= 16 ? ( mute_save[i] = amp_db[i]; amp_db[i] = DB_MIN; );
+    i += 1;
+  );
+  preset_globals_musical();
+  preset_noise(0, -12, 1, 80, 8000, 200);
+  preset_click(0, -18, 3);
+  recompute_amp();
+);
+
+function preset_membrane() local()
+(
+  preset_silence_all();
+  preset_set(0,  1,  1,    0, 800, 0.05);
+  preset_set(1,  8,  5,   -6, 400, 0.00);
+  preset_set(2, 17,  8,  -10, 250, 0.00);
+  preset_set(3, 16,  7,  -14, 180, 0.00);
+  preset_set(4,  8,  3,  -18, 130, 0.00);
+  preset_set(5, 35, 12,  -22, 100, 0.00);
+  preset_set(6, 22,  7,  -26,  80, 0.00);
+  preset_set(7,  7,  2,  -30,  60, 0.00);
+  preset_globals_drum(150, -2, 60);
+  preset_noise(0, -20, 1, 80, 8000, 200);
+  preset_click(1, -30, 2);
+  recompute_amp();
+);
+
+function preset_bell() local()
+(
+  preset_silence_all();
+  preset_set(0, 1, 1,    0, 3000, 0.0);
+  preset_set(1, 1, 2,   -3, 2200, 0.0);
+  preset_set(2, 1, 3,   -8, 1500, 0.0);
+  preset_set(3, 1, 4,  -10, 1100, 0.0);
+  preset_set(4, 1, 5,  -14,  800, 0.0);
+  preset_set(5, 1, 6,  -18,  600, 0.0);
+  preset_set(6, 1, 7,  -22,  450, 0.0);
+  preset_set(7, 1, 8,  -26,  300, 0.0);
+  preset_globals_drum(2500, 0, 200);
+  preset_noise(0, -20, 1, 80, 8000, 200);
+  preset_click(1, -26, 1);
+  recompute_amp();
+);
+
+function preset_snare() local()
+(
+  preset_silence_all();
+  preset_set(0,  1, 1,   -2,  60, 0.3);
+  preset_set(1,  3, 2,   -8,  45, 0.2);
+  preset_set(2,  7, 4,  -10,  35, 0.1);
+  preset_set(3, 11, 8,  -12,  30, 0.0);
+  preset_set(4, 13, 8,  -16,  25, 0.0);
+  preset_globals_drum(80, -3, 40);
+  preset_noise(1, -6, 1, 120, 9000, 800);
+  preset_click(1, -15, 2);
+  recompute_amp();
+);
+
+// SUB KICK — clean tonal: NO noise, NO click
+// pitch env: depth +36 = peak 3 octaves above baseline, sweeps DOWN over decay
+function preset_kick() local()
+(
+  preset_silence_all();
+  preset_set(0, 1, 1,    0, 500, 1.0);
+  preset_set(1, 1, 2,   -8, 300, 0.5);
+  preset_set(2, 1, 3,  -16, 180, 0.0);
+  preset_globals_drum(220, 36, 70);
+  preset_noise(0, -20, 1, 80, 8000, 200);
+  preset_click(0, -18, 2);
+  recompute_amp();
+);
+
+function preset_tom() local()
+(
+  preset_silence_all();
+  preset_set(0, 1, 1,    0, 350, 1.0);
+  preset_set(1, 8, 5,  -10, 200, 0.5);
+  preset_set(2, 5, 2,  -16, 130, 0.2);
+  preset_globals_drum(180, 24, 90);
+  preset_noise(0, -20, 1, 80, 8000, 200);
+  preset_click(1, -22, 2);
+  recompute_amp();
+);
+
+// CYMBALS — a cymbal is hundreds of inharmonic modes plus broadband sizzle.
+// 32 sines can't supply that alone, but cross-FM between high-prime ratio
+// pairs sprays dense inharmonic sidebands (the DX7 metallic trick), self-FM
+// at depth 3+ pushes a sine toward chaos (shimmer), odd saturation squares
+// the partials up like an 808 hat's oscillators, and the HP'd noise channel
+// carries the wash. Even FM/sat aliasing helps: aliases are inharmonic too.
+
+function preset_hat() local(i)
+(
+  preset_silence_all();
+  preset_set(0,  9, 2,  -7, 55, 0);
+  preset_set(1,  6, 1,  -7, 60, 0);
+  preset_set(2, 40, 7,  -8, 50, 0);
+  preset_set(3, 13, 2,  -8, 55, 0);
+  preset_set(4, 15, 2,  -9, 45, 0);
+  preset_set(5, 33, 4, -10, 40, 0);
+  // ring of cross-modulators: every partial is both carrier and modulator
+  fm_src[0] = 1; fm_depth[0] = 3.0;
+  fm_src[1] = 2; fm_depth[1] = 3.0;
+  fm_src[2] = 3; fm_depth[2] = 2.5;
+  fm_src[3] = 4; fm_depth[3] = 2.5;
+  fm_src[4] = 5; fm_depth[4] = 2.5;
+  fm_src[5] = 0; fm_depth[5] = 2.5;
+  i = 0;
+  loop(6, sat_amt[i] = 0.55; sat_mix[i] = 1; i += 1;);   // square-ish, 808-style
+  preset_globals_drum(70, 0, 60);
+  preset_noise(1, -8, 0.5, 55, 18000, 6500);
+  preset_click(1, -20, 1.5);
+  recompute_amp();
+);
+
+function preset_ride() local(i)
+(
+  preset_silence_all();
+  preset_set(0,  3, 1,  -6, 3500, 0);
+  preset_set(1, 41, 8,  -8, 3000, 0);
+  preset_set(2, 47, 8, -10, 2600, 0);
+  preset_set(3, 13, 2, -10, 2200, 0);
+  preset_set(4, 59, 8, -12, 1800, 0);
+  preset_set(5, 33, 4, -13, 1500, 0);
+  preset_set(6, 19, 2, -15, 1100, 0);
+  preset_set(7, 87, 8, -17,  800, 0);
+  // self-FM (src = self) = chaotic shimmer; cross-FM = dense sidebands
+  fm_src[0] = 0; fm_depth[0] = 3.5;
+  fm_src[1] = 2; fm_depth[1] = 3.0;
+  fm_src[2] = 2; fm_depth[2] = 4.0;
+  fm_src[3] = 4; fm_depth[3] = 2.5;
+  fm_src[4] = 4; fm_depth[4] = 4.5;
+  fm_src[5] = 1; fm_depth[5] = 2.5;
+  fm_src[6] = 6; fm_depth[6] = 3.5;
+  fm_src[7] = 3; fm_depth[7] = 2.0;
+  i = 0;
+  loop(8, sat_amt[i] = 0.4; sat_mix[i] = 0.7; i += 1;);
+  preset_globals_drum(3800, 0, 100);
+  preset_noise(1, -16, 1, 2600, 16000, 4500);
+  preset_click(1, -24, 1);
+  recompute_amp();
+);
+
+// ---- solid ----
+
+// 808 cowbell = two square-ish oscillators. Here they sit a pure 3/2 apart
+// (5/4 and 15/8 of the fundamental), squared up by odd saturation.
+function preset_cowbell() local()
+(
+  preset_silence_all();
+  preset_set(0,  5, 4, -5, 350, 0);
+  preset_set(1, 15, 8, -5, 300, 0);
+  sat_amt[0] = 0.7; sat_mix[0] = 1;
+  sat_amt[1] = 0.7; sat_mix[1] = 1;
+  preset_globals_drum(320, 0, 50);
+  preset_noise(0, -20, 1, 80, 8000, 200);
+  preset_click(1, -22, 1);
+  recompute_amp();
+);
+
+// clap = mostly a bandpassed noise burst; a whisper of body underneath
+function preset_clap() local()
+(
+  preset_silence_all();
+  preset_set(0, 1, 1, -20, 60, 0);
+  preset_set(1, 7, 4, -24, 50, 0);
+  preset_globals_drum(150, 0, 40);
+  preset_noise(1, -5, 8, 140, 3800, 700);
+  preset_click(1, -14, 3);
+  recompute_amp();
+);
+
+// long swept sub with a little odd-harmonic growl on the fundamental.
+// play it low - an octave or two below the default note
+function preset_boom() local()
+(
+  preset_silence_all();
+  preset_set(0, 1, 1,   0, 900, 1.0);
+  preset_set(1, 2, 1, -14, 250, 0.5);
+  preset_set(2, 3, 1, -24, 120, 0.0);
+  sat_amt[0] = 0.35; sat_mix[0] = 1;
+  preset_globals_drum(750, 28, 55);
+  preset_noise(0, -20, 1, 80, 8000, 200);
+  preset_click(0, -18, 2);
+  recompute_amp();
+);
+
+// ---- creative ----
+
+// paired gamelan instruments are deliberately tuned a few cents apart so
+// they beat slowly against each other (ombak). Pairs of identical ratios
+// with +/- a few cents of detune recreate it: the beat rate scales with
+// the fundamental, so it transposes musically.
+function preset_gamelan() local()
+(
+  preset_silence_all();
+  preset_set(0,  1, 1,  -4, 2200, 0);
+  preset_set(1,  1, 1,  -6, 2000, 0); detune_cents[1] = 7;  update_detune(1);
+  preset_set(2,  2, 1, -10, 1600, 0);
+  preset_set(3,  2, 1, -12, 1500, 0); detune_cents[3] = -6; update_detune(3);
+  preset_set(4, 16, 7, -14, 1200, 0);
+  preset_set(5, 16, 7, -16, 1100, 0); detune_cents[5] = 5;  update_detune(5);
+  preset_set(6,  7, 2, -18,  800, 0);
+  preset_set(7, 21, 4, -22,  500, 0);
+  sat_amt[0] = 0.25; sat_mix[0] = 0.3;
+  sat_amt[2] = 0.25; sat_mix[2] = 0.3;
+  preset_globals_drum(2400, 0, 80);
+  preset_noise(0, -20, 1, 80, 8000, 200);
+  preset_click(1, -28, 0.8);
+  recompute_amp();
+);
+
+// every prime through 31, folded into a single octave - one stem of every
+// prime-limit color, decays staggered so the hit blooms downward
+function preset_prime_chime() local()
+(
+  preset_silence_all();
+  preset_set(0,   1,  1,  -4, 3000, 0);
+  preset_set(1,  17, 16,  -8, 2700, 0);
+  preset_set(2,  19, 16,  -9, 2500, 0);
+  preset_set(3,   5,  4,  -7, 2600, 0);
+  preset_set(4,  21, 16, -11, 2200, 0);
+  preset_set(5,  11,  8,  -9, 2300, 0);
+  preset_set(6,  23, 16, -13, 1900, 0);
+  preset_set(7,   3,  2,  -6, 2400, 0);
+  preset_set(8,  13,  8, -11, 2000, 0);
+  preset_set(9,   7,  4, -10, 1800, 0);
+  preset_set(10, 29, 16, -15, 1300, 0);
+  preset_set(11, 31, 16, -17,  900, 0);
+  preset_globals_drum(3200, 0, 100);
+  preset_noise(0, -20, 1, 80, 8000, 200);
+  preset_click(1, -30, 0.6);
+  recompute_amp();
+);
+
+// negative pitch env = upward chirp: the classic water plink
+function preset_waterdrop() local()
+(
+  preset_silence_all();
+  preset_set(0, 1, 1,   0, 130, 1.0);
+  preset_set(1, 3, 1, -18,  60, 1.0);
+  preset_globals_drum(140, -19, 55);
+  preset_noise(0, -20, 1, 80, 8000, 200);
+  preset_click(1, -26, 0.6);
+  recompute_amp();
+);
+
+// ---- mathematical structures: the tuning is the patch ----
+
+// twelve steps along the chain of pure fifths (3^n, octave-reduced), the
+// Pythagorean chromatic as a single sonority. Everything is 3-limit, so
+// every stem draws blue. Decays shrink along the chain: the spiral fades
+// as it winds. Chain order: up 6 fifths, then down 5 fourths.
+function preset_fifths_spiral() local()
+(
+  preset_silence_all();
+  preset_set(0,    1,   1,  -4, 2800, 0);
+  preset_set(1,    3,   2,  -6, 2300, 0);
+  preset_set(2,    9,   8,  -8, 1900, 0);
+  preset_set(3,   27,  16, -10, 1600, 0);
+  preset_set(4,   81,  64, -12, 1300, 0);
+  preset_set(5,  243, 128, -14, 1050, 0);
+  preset_set(6,  729, 512, -16,  850, 0);
+  preset_set(7,    4,   3,  -6, 2300, 0);
+  preset_set(8,   16,   9,  -8, 1900, 0);
+  preset_set(9,   32,  27, -10, 1600, 0);
+  preset_set(10, 128,  81, -12, 1300, 0);
+  preset_set(11, 256, 243, -14, 1050, 0);
+  preset_globals_drum(3000, 0, 100);
+  preset_noise(0, -20, 1, 80, 8000, 200);
+  preset_click(1, -30, 0.6);
+  recompute_amp();
+);
+
+// Euler-Fokker genus 3*5*7: the eight divisors of 105, octave-reduced.
+// Level in the divisor lattice sets loudness and length - the fundamental
+// on top, the single primes below it, their products fainter, 105 faintest.
+function preset_euler_genus() local()
+(
+  preset_silence_all();
+  preset_set(0,   1,  1,  -4, 2600, 0);   // 1
+  preset_set(1,   3,  2,  -8, 2000, 0);   // 3
+  preset_set(2,   5,  4,  -8, 2000, 0);   // 5
+  preset_set(3,   7,  4,  -8, 2000, 0);   // 7
+  preset_set(4,  15,  8, -13, 1400, 0);   // 3*5
+  preset_set(5,  21, 16, -13, 1400, 0);   // 3*7
+  preset_set(6,  35, 32, -13, 1400, 0);   // 5*7
+  preset_set(7, 105, 64, -18,  900, 0);   // 3*5*7
+  sat_amt[0] = 0.2; sat_mix[0] = 0.2;
+  preset_globals_drum(2800, 0, 90);
+  preset_noise(0, -20, 1, 80, 8000, 200);
+  preset_click(1, -30, 0.6);
+  recompute_amp();
+);
+
+// harmonics 8 through 16 as a chord - the overtone scale sounded at once
+function preset_otonal_nine() local()
+(
+  preset_silence_all();
+  preset_set(0,  1, 1,  -4, 2200, 0);
+  preset_set(1,  9, 8,  -8, 1900, 0);
+  preset_set(2,  5, 4,  -7, 2000, 0);
+  preset_set(3, 11, 8, -10, 1700, 0);
+  preset_set(4,  3, 2,  -6, 2100, 0);
+  preset_set(5, 13, 8, -11, 1500, 0);
+  preset_set(6,  7, 4,  -9, 1800, 0);
+  preset_set(7, 15, 8, -12, 1300, 0);
+  preset_set(8,  2, 1,  -8, 1600, 0);
+  preset_globals_drum(2400, 0, 90);
+  preset_noise(0, -20, 1, 80, 8000, 200);
+  preset_click(1, -28, 0.7);
+  recompute_amp();
+);
+
+// the superparticular ratios (n+1)/n condensing toward the fundamental.
+// Adjacent partials beat progressively slower as the cluster tightens -
+// a comb collapsing into unison. Longer decays near the root, so the
+// texture evolves from bright cluster to slow deep beating.
+function preset_superparticular() local()
+(
+  preset_silence_all();
+  preset_set(0,   1,  1,  -4, 2800, 0);
+  preset_set(1,   2,  1, -10,  700, 0);
+  preset_set(2,   3,  2, -11,  850, 0);
+  preset_set(3,   4,  3, -12, 1000, 0);
+  preset_set(4,   5,  4, -12, 1150, 0);
+  preset_set(5,   6,  5, -13, 1300, 0);
+  preset_set(6,   7,  6, -13, 1450, 0);
+  preset_set(7,   8,  7, -14, 1600, 0);
+  preset_set(8,   9,  8, -14, 1750, 0);
+  preset_set(9,  10,  9, -15, 1900, 0);
+  preset_set(10, 11, 10, -15, 2050, 0);
+  preset_set(11, 12, 11, -16, 2200, 0);
+  preset_set(12, 13, 12, -16, 2350, 0);
+  preset_set(13, 14, 13, -17, 2500, 0);
+  preset_set(14, 15, 14, -17, 2650, 0);
+  preset_set(15, 16, 15, -18, 2800, 0);
+  preset_globals_drum(3000, 0, 100);
+  preset_noise(0, -20, 1, 80, 8000, 200);
+  preset_click(1, -30, 0.6);
+  recompute_amp();
+);
+
+// harmonics at the Fibonacci numbers, with decays shrinking by the golden
+// ratio at every step - the amplitude structure and the time structure
+// follow the same law
+function preset_fibonacci() local()
+(
+  preset_silence_all();
+  preset_set(0,  1, 1,  -4, 2400, 0);
+  preset_set(1,  2, 1,  -7, 1480, 0);
+  preset_set(2,  3, 1, -10,  915, 0);
+  preset_set(3,  5, 1, -13,  565, 0);
+  preset_set(4,  8, 1, -16,  350, 0);
+  preset_set(5, 13, 1, -19,  216, 0);
+  preset_set(6, 21, 1, -22,  133, 0);
+  preset_set(7, 34, 1, -25,   82, 0);
+  preset_globals_drum(2600, 0, 90);
+  preset_noise(0, -20, 1, 80, 8000, 200);
+  preset_click(1, -28, 0.7);
+  recompute_amp();
+);
+
+function action_reset_all() local() ( preset_harmonic(); );
+
+function action_clear_all() local(i)
+(
+  i = 0;
+  loop(NUM_OSC, amp_db[i] = DB_MIN; mute_save[i] = -999; i += 1;);
+  recompute_amp();
+);
+
+function toggle_mute(idx) local(was_muted)
+(
+  was_muted = mute_save[idx] > -900;
+  was_muted ? ( set_volume(idx, mute_save[idx]); mute_save[idx] = -999; )
+            : ( mute_save[idx] = amp_db[idx]; set_volume(idx, DB_MIN); );
+);
+
+// fire_note: full note-on initialization. Always called with env_val at (or
+// within -40 dB of) zero, so the env reset and RST phase scatter are silent.
+function fire_note(nn, vv) local(i_ev, eff_t, vel_dec_scale)
+(
+  velocity = vv / 127;
+  note_on_pitch = nn;
+  note_pitch_offset = nn - slider1;
+  eff_penv_depth = penv_depth * (1 - (1 - velocity) * vel_penv_amt);
+  vel_dec_scale = 1 - (1 - velocity) * vel_decay_amt;
+  vel_dec_scale = max(vel_dec_scale, 0.05);
+
+  i_ev = 0;
+  loop(NUM_OSC,
+    decay_time[i_ev] > 0 ? (
+      eff_t = decay_time[i_ev] * vel_dec_scale;
+      eff_decay_factor[i_ev] = exp(-1 / max(1, eff_t * 0.001 * srate));
+    ) : (
+      eff_decay_factor[i_ev] = 1;
+    );
+    osc_amp[i_ev] = 1;
+    i_ev += 1;
+  );
+
+  // phase scatter on RST mode (silent: env_val is 0 here)
+  slider29 < 0.5 ? (
+    i_ev = 0;
+    loop(NUM_OSC,
+      phase[i_ev] = ((i_ev + 1) * 0.6180339887 - floor((i_ev + 1) * 0.6180339887)) * twopi;
+      i_ev += 1;
+    );
+  );
+
+  base_freq = base_hz * pow(2, note_pitch_offset / 12);
+  base_inc = twopi * base_freq / srate;
+
+  env_state = 1; env_val = 0;
+  penv_state = penv_depth != 0 ? 1 : 0;
+  penv_val = 0;
+
+  (slider20 > 0.5 && slider21 > -79) ? (n_env_state = 1; n_env_val = 0;) : (n_env_state = 0; n_env_val = 0;);
+  n_lp_state = 0; n_hp_y = 0; n_hp_x = 0;
+  click_amp = (slider26 > 0.5 && slider27 > -79) ? velocity : 0;
+  silent_count = 0;
+);
+
+@slider
+recompute_envelopes();
+i = 0;
+loop(NUM_OSC, update_decay(i); i += 1;);
+i = 0; sum_amp = 0;
+loop(NUM_OSC,
+  amp_db[i] <= DB_MIN ? amp_lin[i] = 0 : amp_lin[i] = pow(10, amp_db[i] / 20);
+  sum_amp += amp_lin[i];
+  i += 1;
+);
+(slider16 == 1 && sum_amp > 0) ? (
+  norm = 1 / sum_amp;
+  i = 0;
+  loop(NUM_OSC, amp_lin[i] *= norm; i += 1;);
+);
+
+@block
+// Sample-rate change guard: reinitialize all srate-dependent constants if the
+// host has switched audio devices or sample rates.
+last_srate != srate ? (
+  recompute_envelopes();
+  i = 0;
+  loop(NUM_OSC, update_decay(i); i += 1;);
+  SILENCE_FRAMES = floor(srate * 0.05);       // 50 ms — GATE release timeout
+  SILENCE_FRAMES_LONG = floor(srate * 1.0);   // 1 s   — 1SHOT hold timeout
+  last_srate = srate;
+);
+
+// Collect MIDI events into a queue for sample-accurate dispatch in @sample.
+// Reset state for this block.
+midi_evt_count = 0;
+midi_evt_idx = 0;
+sample_pos = 0;
+
+while (midi_evt_count < EVT_MAX && midirecv(ofs, m1, m2, m3)) (
+  midi_evt[midi_evt_count * 4]     = ofs;
+  midi_evt[midi_evt_count * 4 + 1] = m1;
+  midi_evt[midi_evt_count * 4 + 2] = m2;
+  midi_evt[midi_evt_count * 4 + 3] = m3;
+  midi_evt_count += 1;
+  midisend(ofs, m1, m2, m3);
+);
+
+// GUI preview trigger (PLAY button / SPACE) — inject a synthetic note-on
+// into the same event queue so the preview path is identical to real MIDI.
+// A matching note-off is queued ~250 ms later so GATE mode releases cleanly.
+gui_trig_note ? (
+  gui_trig_note = 0;
+  gui_note_pitch = floor(slider1);
+  // hold the preview through the whole attack + decay (+50 ms margin,
+  // capped at 10 s) so GATE mode demonstrates the envelope actually dialed
+  // in — a fixed gate can't preview a decay longer than itself
+  gui_hold_s = min(10, (slider6 + slider7) * 0.001 + 0.05);
+  midi_evt_count < EVT_MAX ? (
+    midi_evt[midi_evt_count * 4]     = 0;
+    midi_evt[midi_evt_count * 4 + 1] = 0x90;
+    midi_evt[midi_evt_count * 4 + 2] = gui_note_pitch;
+    midi_evt[midi_evt_count * 4 + 3] = 100;
+    midi_evt_count += 1;
+  );
+  gui_noteoff_pending = floor(srate * gui_hold_s);
+);
+gui_noteoff_pending >= 0 ? (
+  gui_noteoff_pending -= samplesblock;
+  gui_noteoff_pending < 0 ? (
+    midi_evt_count < EVT_MAX ? (
+      midi_evt[midi_evt_count * 4]     = 0;
+      midi_evt[midi_evt_count * 4 + 1] = 0x80;
+      midi_evt[midi_evt_count * 4 + 2] = gui_note_pitch;
+      midi_evt[midi_evt_count * 4 + 3] = 0;
+      midi_evt_count += 1;
+    );
+  );
+);
+
+// FM routing — recomputed every block because fm_src / fm_depth are written
+// directly by @gfx cell handlers, not through sliders. Without this, the
+// audio path's fm_active and is_mod[] flags stay stale when the user edits
+// FM cells.
+fm_active = 0;
+i = 0;
+loop(NUM_OSC,
+  fm_depth[i] > 0 ? fm_active = 1;
+  i += 1;
+);
+i = 0;
+loop(NUM_OSC, is_mod[i] = 0; i += 1;);
+fm_active ? (
+  i = 0;
+  loop(NUM_OSC,
+    fm_depth[i] > 0 ? (
+      src_i = floor(fm_src[i]);
+      src_i >= 0 && src_i < NUM_OSC ? is_mod[src_i] = 1;
+    );
+    i += 1;
+  );
+);
+
+@sample
+// Sample-accurate MIDI dispatch: fire any queued events whose offset has
+// reached the current sample position within this block.
+while (midi_evt_idx < midi_evt_count && midi_evt[midi_evt_idx * 4] <= sample_pos) (
+  m1_ev = midi_evt[midi_evt_idx * 4 + 1];
+  m2_ev = midi_evt[midi_evt_idx * 4 + 2];
+  m3_ev = midi_evt[midi_evt_idx * 4 + 3];
+  st_ev = m1_ev & 0xF0;
+
+  (st_ev == 0x90 && m3_ev > 0) ? (
+    (env_state > 0 && env_val > 0.01) ? (
+      // voice steal: fade the current sound over 1.5 ms, THEN fire the new
+      // note from silence (state 5 below). Removes retrigger clicks from
+      // both the envelope hard-reset and the RST-mode phase scatter — the
+      // same approach polyphonic synths use when stealing voices.
+      pend_note = m2_ev;
+      pend_vel = m3_ev;
+      pend_active = 1;
+      env_state = 5;
+    ) : (
+      fire_note(m2_ev, m3_ev);
+    );
+
+  ) : ((st_ev == 0x80) || (st_ev == 0x90 && m3_ev == 0)) && m2_ev == note_on_pitch ? (
+    // GATE mode triggers release; ONE-SHOT ignores note-off entirely.
+    // A steal fade in progress is already dying — don't demote it to release.
+    slider30 < 0.5 && env_state != 5 ? env_state = 4;
+    note_on_pitch = -1;
+  );
+
+  midi_evt_idx += 1;
+);
+
+// LFO advance — runs free, regardless of env_state, so modulation is
+// continuous between notes (more organic than per-note retrigger).
+lfo1_active || lfo2_active ? (
+  lfo1_phase += lfo1_inc;
+  lfo1_phase >= twopi ? (
+    lfo1_phase -= twopi;
+    lfo1_rand = rand(2) - 1;
+  );
+  lfo2_phase += lfo2_inc;
+  lfo2_phase >= twopi ? (
+    lfo2_phase -= twopi;
+    lfo2_rand = rand(2) - 1;
+  );
+
+  // shape selectors. 0=sine, 1=triangle, 2=square, 3=random (sample-and-hold)
+  slider32 == 0 ? lfo1_val = sin(lfo1_phase)
+  : slider32 == 1 ? lfo1_val = abs(lfo1_phase * (2 / $pi) - 2) - 1
+  : slider32 == 2 ? lfo1_val = (lfo1_phase < $pi) ? 1 : -1
+  : lfo1_val = lfo1_rand;
+
+  slider36 == 0 ? lfo2_val = sin(lfo2_phase)
+  : slider36 == 1 ? lfo2_val = abs(lfo2_phase * (2 / $pi) - 2) - 1
+  : slider36 == 2 ? lfo2_val = (lfo2_phase < $pi) ? 1 : -1
+  : lfo2_val = lfo2_rand;
+
+  // pre-compute per-sample modulation contributions (used by all partials)
+  lfo1_pmod = lfo1_val * lfo1_pitch_lin;   // small-angle pitch: 1 + pmod*amt
+  lfo2_pmod = lfo2_val * lfo2_pitch_lin;
+  lfo1_amod = lfo1_val * slider34;          // amp:               1 + amod*amt
+  lfo2_amod = lfo2_val * slider38;
+) : (
+  lfo1_pmod = lfo1_amod = 0;
+  lfo2_pmod = lfo2_amod = 0;
+);
+
+// slew the amplitude-mod values: square / random (S&H) shapes step
+// instantly, and an instantaneous gain step is a click. 2 ms of slew is
+// inaudible as shape but removes the discontinuity entirely. Also decays
+// smoothly to zero when an LFO's depth is pulled down mid-note.
+lfo1_amod_s += smooth_k * (lfo1_amod - lfo1_amod_s);
+lfo2_amod_s += smooth_k * (lfo2_amod - lfo2_amod_s);
+
+// global amp envelope
+// Envelope state machine:
+//   1: attack    -> 2 when env_val reaches 1
+//   2: decay     -> 3 when env_val reaches sus_lvl
+//   3: sustain   -> 4 only when GATE mode receives note-off (1SHOT stays in 3)
+//   4: release   -> 0 when env_val reaches 0
+// GATE: full A->D->S->R; note-off triggers the release.
+// 1SHOT: A->D->silence. Note-off is ignored, so the decay ALWAYS targets 0 -
+// a nonzero sustain would otherwise drone forever with no way to stop it.
+// SUS and REL therefore only apply in GATE mode (they dim in the UI).
+env_state == 5 ? (
+  // voice-steal fade; when it lands on zero, fire the note waiting behind it
+  env_val -= steal_inc;
+  env_val <= 0 ? (
+    env_val = 0;
+    pend_active ? ( fire_note(pend_note, pend_vel); pend_active = 0; )
+                : ( env_state = 0; );
+  );
+) : env_state == 1 ? (
+  env_val += atk_inc;
+  env_val >= 1 ? ( env_val = 1; env_state = 2; );
+) : env_state == 2 ? (
+  dec_target = slider30 > 0.5 ? 0 : sus_lvl;   // 1SHOT: decay to silence
+  env_val -= dec_inc * (1 - dec_target + 0.0001);
+  env_val <= dec_target ? (env_val = dec_target; env_state = 3;);
+) : env_state == 4 ? (
+  env_val -= rel_inc;
+  env_val <= 0 ? (env_val = 0; env_state = 0;);
+);
+
+// pitch envelope
+penv_state == 1 ? (
+  penv_val += penv_atk_inc;
+  penv_val >= 1 ? (penv_val = 1; penv_state = 2;);
+) : penv_state == 2 ? (
+  penv_val -= penv_dec_inc;
+  penv_val <= 0 ? (penv_val = 0; penv_state = 0;);
+);
+
+// noise envelope
+n_env_state == 1 ? (
+  n_env_val += n_atk_inc;
+  n_env_val >= 1 ? (n_env_val = 1; n_env_state = 2;);
+) : n_env_state == 2 ? (
+  n_env_val *= n_dec_factor;
+  n_env_val < 0.0001 ? (n_env_val = 0; n_env_state = 0;);
+);
+
+// smoothed global gains — removes zipper noise from live gain edits
+master_lin_s += smooth_k * (master_lin - master_lin_s);
+n_lin_s += smooth_k * (n_lin - n_lin_s);
+click_lin_s += smooth_k * (click_lin - click_lin_s);
+
+out = 0;
+
+env_state > 0 ? (
+  // hoist common math out of the partial loop
+  common_penv_st = penv_val * eff_penv_depth;
+  pe_active = abs(common_penv_st) > TINY;
+  pe_active ? pe1_mult = pow(2, common_penv_st / 12) : pe1_mult = 1;
+
+  // FM: pre-compute sin(phase[i]) for every partial using last sample's phases.
+  // This avoids ordering issues — modulators always read previous sample's phase.
+  // Only the work happens when FM is actually in use.
+  fm_active ? (
+    i = 0;
+    loop(NUM_OSC,
+      mod_sin[i] = sin(phase[i]);
+      i += 1;
+    );
+  );
+
+  out_partials = 0;
+  i = 0;
+  loop(NUM_OSC,
+    // 2 ms one-pole smoothing on the per-partial gain: removes zipper from
+    // live volume drags, pops from mute/unmute, and auto-normalize jumps
+    amp_lin_s[i] += smooth_k * (amp_lin[i] - amp_lin_s[i]);
+    amp_smp = amp_lin_s[i];
+    // The amp_smp > TINY gate below skips synthesis, not this decay update, so
+    // osc_amp keeps multiplying down into denormal range. In GATE mode a held
+    // note is never culled (state 3), which would leave up to 32 denormal
+    // multiplies per sample running indefinitely. Flush to zero instead.
+    decay_time[i] > 0 ? (
+      amp_smp *= osc_amp[i];
+      osc_amp[i] *= eff_decay_factor[i];
+      osc_amp[i] < 1e-20 ? osc_amp[i] = 0;
+    );
+
+    // LFO amp modulation (multiplicative, slewed). amt=0 -> no effect.
+    // The gate stays open while the slewed value drains to zero so pulling
+    // a depth to 0 mid-note can't step the gain either.
+    (lfo1_active || abs(lfo1_amod_s) > 0.0001) ? amp_smp *= 1 + lfo1_amod_s * lfo1_amt[i];
+    (lfo2_active || abs(lfo2_amod_s) > 0.0001) ? amp_smp *= 1 + lfo2_amod_s * lfo2_amt[i];
+    amp_smp < 0 ? amp_smp = 0;  // clamp; amp can't go negative
+
+    // Process partial when audible OR when it's referenced as an FM source.
+    // This is the key: a muted partial can still drive FM if other partials
+    // point to it. Output addition is gated separately on audibility.
+    (amp_smp > TINY || is_mod[i]) ? (
+      // partial pitch multiplier — fast paths for the common cases
+      pe_active ? (
+        pe_v = penv_amount[i];
+        abs(pe_v - 1) < PE_EPS ? ( partial_pitch_mult = pe1_mult; )
+        : abs(pe_v) < PE_EPS ? ( partial_pitch_mult = 1; )
+        : ( partial_pitch_mult = pow(2, common_penv_st * pe_v / 12); );
+      ) : (
+        partial_pitch_mult = 1;
+      );
+
+      // LFO pitch modulation via small-angle approximation
+      lfo1_active ? partial_pitch_mult *= 1 + lfo1_pmod * lfo1_amt[i];
+      lfo2_active ? partial_pitch_mult *= 1 + lfo2_pmod * lfo2_amt[i];
+
+      // FM phase offset — phase modulation against the chosen source partial
+      fm_active ? (
+        fm_src_idx = floor(fm_src[i]);
+        fm_src_idx = max(0, min(NUM_OSC - 1, fm_src_idx));
+        fm_phase_offset = fm_depth[i] * mod_sin[fm_src_idx];
+        fm_phase_offset = max(-50, min(50, fm_phase_offset));
+      ) : ( fm_phase_offset = 0; );
+
+      osc_inc = base_inc * ratio_val[i] * detune_factor[i] * partial_pitch_mult;
+      osc_inc < nyq_inc ? (
+        // fade the top 10% below Nyquist so partials swept out of range by
+        // the pitch envelope roll off instead of hard-gating (crackle)
+        osc_inc > nyq_fade_start ? amp_smp *= (nyq_inc - osc_inc) * nyq_fade_inv;
+        ph = phase[i];
+        // only contribute to mix if audible (so muted-as-modulator stays silent)
+        amp_smp > TINY ? (
+          s_shp = sin(ph + fm_phase_offset);
+          sat_amt[i] > 0.001 ? (
+            sd = sat_amt[i];
+            // odd harmonics (3f, 5f...): symmetric soft clip
+            s_od = s_shp * (1 + 4 * sd) / (1 + 4 * sd * abs(s_shp));
+            // even harmonics (2f, 4f...): Chebyshev T2 term, DC-free
+            s_ev = (s_shp + sd * 0.8 * (2 * s_shp * s_shp - 1)) / (1 + 0.8 * sd);
+            s_shp = s_ev + (s_od - s_ev) * sat_mix[i];
+          );
+          out_partials += amp_smp * s_shp;
+        );
+        ph += osc_inc;
+        ph >= twopi ? ph -= twopi;
+        phase[i] = ph;
+      );
+    );
+    i += 1;
+  );
+  out += out_partials * env_val * velocity;
+);
+
+n_env_val > 0 && (n_lin > 0 || n_lin_s > TINY) ? (
+  white = rand(2) - 1;
+  n_lp_state += n_lp_a * (white - n_lp_state);
+  n_hp_y = n_hp_alpha * (n_hp_y + n_lp_state - n_hp_x);
+  n_hp_x = n_lp_state;
+  out += n_hp_y * n_lin_s * n_env_val * velocity;
+);
+
+click_amp > 0.0001 && (click_lin > 0 || click_lin_s > TINY) ? (
+  out += (rand(2) - 1) * click_amp * click_lin_s;
+  click_amp *= click_dec_factor;
+) : ( click_amp = 0; );
+
+out *= master_lin_s;
+
+slider17 > 0 ? (
+  drv_x = out * drive_lin;
+  out = drv_x / sqrt(1 + drv_x * drv_x) * inv_drive_lin;
+);
+
+// NaN safety net — if FM or any chain produced a NaN this sample, replace
+// it with 0 so it doesn't propagate to spl0/spl1 (which would silence the
+// host channel for the rest of the buffer) and doesn't trick voice culling
+// into thinking the voice is silent (NaN compares as false with everything).
+out != out ? out = 0;
+
+spl0 = spl1 = out;
+
+// feed the output meter (read and reset by @gfx each frame)
+av_pk = abs(out);
+av_pk > vis_peak ? vis_peak = av_pk;
+
+// State-aware voice culling. Only trigger in states where the voice is
+// supposed to be dying:
+//   state 4 (GATE release): standard 50 ms timeout
+//   state 3 in 1SHOT mode:  1-second timeout — note-off can't end this state,
+//                           so the voice ends only when audio actually fades
+//                           (via SUS=0 + decay, or via per-partial decays).
+//                           1 s timeout prevents brief quiet portions of
+//                           complex FM/sustained sounds from being mistaken
+//                           for the voice ending.
+//   state 3 in GATE mode:   note is being held; never cull
+// Any other state means the voice is meant to be alive; reset the counter.
+env_state == 4 ? (
+  abs(out) > SILENCE_THRESH ? silent_count = 0 : silent_count += 1;
+  silent_count > SILENCE_FRAMES ? (
+    env_state = 0; env_val = 0;
+    n_env_state = 0; n_env_val = 0;
+    click_amp = 0;
+  );
+) : (env_state == 3 && slider30 > 0.5) ? (
+  abs(out) > SILENCE_THRESH ? silent_count = 0 : silent_count += 1;
+  silent_count > SILENCE_FRAMES_LONG ? (
+    env_state = 0; env_val = 0;
+    n_env_state = 0; n_env_val = 0;
+    click_amp = 0;
+  );
+) : (
+  silent_count = 0;
+);
+
+sample_pos += 1;
+
+@serialize
+file_mem(0, numer, NUM_OSC);
+file_mem(0, denom, NUM_OSC);
+file_mem(0, amp_db, NUM_OSC);
+file_mem(0, mute_save, NUM_OSC);
+file_mem(0, detune_cents, NUM_OSC);
+file_mem(0, decay_time, NUM_OSC);
+file_mem(0, penv_amount, NUM_OSC);
+file_mem(0, lfo1_amt, NUM_OSC);
+file_mem(0, lfo2_amt, NUM_OSC);
+file_mem(0, fm_src, NUM_OSC);
+file_mem(0, fm_depth, NUM_OSC);
+file_mem(0, sat_amt, NUM_OSC);
+file_mem(0, sat_mix, NUM_OSC);
+
+// CRITICAL: only recompute derived state when LOADING, never when saving.
+// REAPER calls @serialize many times per second during normal runtime
+// (autosave, undo state sync). If we recomputed amp_lin/decay_factor here
+// on every save, those values would be reset multiple times per second
+// while audio is playing, causing clicks, jitter, and apparent instability.
+// file_avail(0) is < 0 during write, >= 0 during read.
+file_avail(0) >= 0 ? (
+  i = 0;
+  sum_amp = 0;
+  loop(NUM_OSC,
+    ratio_val[i] = numer[i] / max(denom[i], NUM_MIN);
+    detune_factor[i] = pow(2, detune_cents[i] / 1200);
+    decay_time[i] > 0 ? decay_factor[i] = exp(-1 / (decay_time[i] * 0.001 * srate)) : decay_factor[i] = 1;
+    amp_db[i] <= DB_MIN ? amp_lin[i] = 0 : amp_lin[i] = pow(10, amp_db[i] / 20);
+    sum_amp += amp_lin[i];
+    i += 1;
+  );
+  (slider16 == 1 && sum_amp > 0) ? (
+    norm = 1 / sum_amp;
+    i = 0;
+    loop(NUM_OSC, amp_lin[i] *= norm; i += 1;);
+  );
+  i = 0;
+  loop(NUM_OSC, amp_lin_s[i] = amp_lin[i]; i += 1;);
+);
+
+@gfx 1024 700
+
+mleft_down = mouse_cap & 1;
+mleft_clk = mleft_down && !(last_mouse_cap & 1);
+mright_clk = (mouse_cap & 2) && !(last_mouse_cap & 2);
+ctrl_held = mouse_cap & 4;
+mx = mouse_x; my = mouse_y;
+click_consumed = 0;
+knob_global_changed = 0;
+hover_kid = -1;
+
+// help overlay open: any click closes it and is swallowed so nothing
+// underneath reacts
+show_help && (mleft_clk || mright_clk) ? (
+  show_help = 0;
+  mleft_clk = 0;
+  mright_clk = 0;
+);
+
+W = gfx_w; H = gfx_h;
+
+gfx_set(0.10, 0.10, 0.12, 1);
+gfx_rect(0, 0, W, H);
+
+// ============================================================
+// HEADER
+// ============================================================
+gfx_set(0.14, 0.14, 0.17, 1);
+gfx_rect(0, 0, W, 36);
+gfx_set(0.20, 0.20, 0.24, 1);
+gfx_line(0, 36, W, 36);
+
+gfx_setfont(1, "Arial", 18);
+gfx_set(0.50, 0.88, 0.96, 1);
+gfx_x = 18; gfx_y = 9;
+gfx_drawstr("MONODRUM");
+
+gfx_setfont(2, "Arial", 11);
+gfx_set(0.45, 0.45, 0.50, 1);
+gfx_x += 14; gfx_y = 14;
+gfx_drawstr("32-PARTIAL JI DRUM SYNTH");
+
+btn_h = 22; btn_y = 7; btn_pad = 6;
+
+clr_w = 80; clr_x = W - 18 - clr_w;
+clr_hover = mx >= clr_x && mx < clr_x + clr_w && my >= btn_y && my < btn_y + btn_h;
+clr_hover ? gfx_set(0.32, 0.20, 0.20, 1) : gfx_set(0.16, 0.14, 0.16, 1);
+gfx_rect(clr_x, btn_y, clr_w, btn_h);
+clr_hover ? gfx_set(0.85, 0.45, 0.40, 1) : gfx_set(0.32, 0.22, 0.24, 1);
+gfx_line(clr_x, btn_y, clr_x + clr_w - 1, btn_y);
+gfx_line(clr_x, btn_y + btn_h - 1, clr_x + clr_w - 1, btn_y + btn_h - 1);
+gfx_line(clr_x, btn_y, clr_x, btn_y + btn_h - 1);
+gfx_line(clr_x + clr_w - 1, btn_y, clr_x + clr_w - 1, btn_y + btn_h - 1);
+gfx_setfont(2, "Arial", 11);
+clr_hover ? gfx_set(0.95, 0.70, 0.65, 1) : gfx_set(0.65, 0.50, 0.50, 1);
+gfx_measurestr("CLEAR ALL", tw, th);
+gfx_x = clr_x + (clr_w - tw) / 2; gfx_y = btn_y + (btn_h - th) / 2;
+gfx_drawstr("CLEAR ALL");
+clr_hover && mleft_clk ? ( action_clear_all(); click_consumed = 1; );
+
+rst_w = 80; rst_x = clr_x - btn_pad - rst_w;
+rst_hover = mx >= rst_x && mx < rst_x + rst_w && my >= btn_y && my < btn_y + btn_h;
+rst_hover ? gfx_set(0.18, 0.30, 0.36, 1) : gfx_set(0.14, 0.16, 0.18, 1);
+gfx_rect(rst_x, btn_y, rst_w, btn_h);
+rst_hover ? gfx_set(0.50, 0.88, 0.96, 1) : gfx_set(0.24, 0.32, 0.36, 1);
+gfx_line(rst_x, btn_y, rst_x + rst_w - 1, btn_y);
+gfx_line(rst_x, btn_y + btn_h - 1, rst_x + rst_w - 1, btn_y + btn_h - 1);
+gfx_line(rst_x, btn_y, rst_x, btn_y + btn_h - 1);
+gfx_line(rst_x + rst_w - 1, btn_y, rst_x + rst_w - 1, btn_y + btn_h - 1);
+rst_hover ? gfx_set(0.85, 0.95, 0.98, 1) : gfx_set(0.55, 0.65, 0.70, 1);
+gfx_measurestr("RESET ALL", tw, th);
+gfx_x = rst_x + (rst_w - tw) / 2; gfx_y = btn_y + (btn_h - th) / 2;
+gfx_drawstr("RESET ALL");
+rst_hover && mleft_clk ? ( action_reset_all(); click_consumed = 1; );
+
+prst_w = 80; prst_x = rst_x - btn_pad - prst_w;
+prst_hover = mx >= prst_x && mx < prst_x + prst_w && my >= btn_y && my < btn_y + btn_h;
+prst_hover ? gfx_set(0.20, 0.28, 0.20, 1) : gfx_set(0.14, 0.18, 0.14, 1);
+gfx_rect(prst_x, btn_y, prst_w, btn_h);
+prst_hover ? gfx_set(0.55, 0.90, 0.55, 1) : gfx_set(0.28, 0.40, 0.28, 1);
+gfx_line(prst_x, btn_y, prst_x + prst_w - 1, btn_y);
+gfx_line(prst_x, btn_y + btn_h - 1, prst_x + prst_w - 1, btn_y + btn_h - 1);
+gfx_line(prst_x, btn_y, prst_x, btn_y + btn_h - 1);
+gfx_line(prst_x + prst_w - 1, btn_y, prst_x + prst_w - 1, btn_y + btn_h - 1);
+prst_hover ? gfx_set(0.78, 0.95, 0.78, 1) : gfx_set(0.55, 0.70, 0.55, 1);
+gfx_measurestr("PRESETS", tw, th);
+gfx_x = prst_x + (prst_w - tw) / 2; gfx_y = btn_y + (btn_h - th) / 2;
+gfx_drawstr("PRESETS");
+prst_hover && mleft_clk ? (
+  gfx_x = prst_x; gfx_y = btn_y + btn_h;
+  presets_result = gfx_showmenu("Harmonic Series|Sub-Harmonic Series||JI Membrane (drum)|JI Bell|JI Snare|Sub Kick (clean)|JI Tom||JI Hi-Hat|JI Ride Cymbal|JI Cowbell|JI Clap|808 Boom||Gamelan Ombak|Prime Octave Chime|Water Drop||Spiral of Fifths|Euler Genus 105|Otonal Nine|Superparticular Cascade|Fibonacci Bloom");
+  presets_result == 1 ? preset_harmonic();
+  presets_result == 2 ? preset_sub_series();
+  presets_result == 3 ? preset_membrane();
+  presets_result == 4 ? preset_bell();
+  presets_result == 5 ? preset_snare();
+  presets_result == 6 ? preset_kick();
+  presets_result == 7 ? preset_tom();
+  presets_result == 8 ? preset_hat();
+  presets_result == 9 ? preset_ride();
+  presets_result == 10 ? preset_cowbell();
+  presets_result == 11 ? preset_clap();
+  presets_result == 12 ? preset_boom();
+  presets_result == 13 ? preset_gamelan();
+  presets_result == 14 ? preset_prime_chime();
+  presets_result == 15 ? preset_waterdrop();
+  presets_result == 16 ? preset_fifths_spiral();
+  presets_result == 17 ? preset_euler_genus();
+  presets_result == 18 ? preset_otonal_nine();
+  presets_result == 19 ? preset_superparticular();
+  presets_result == 20 ? preset_fibonacci();
+  click_consumed = 1;
+);
+
+// PLAY — audition the current sound without a MIDI keyboard (also: SPACE)
+play_w = 64; play_x = prst_x - btn_pad - play_w;
+play_hover = mx >= play_x && mx < play_x + play_w && my >= btn_y && my < btn_y + btn_h;
+play_hover ? hover_kid = 201;
+play_hover ? gfx_set(0.16, 0.26, 0.34, 1) : gfx_set(0.13, 0.17, 0.21, 1);
+gfx_rect(play_x, btn_y, play_w, btn_h);
+play_hover ? gfx_set(0.50, 0.88, 0.96, 1) : gfx_set(0.26, 0.40, 0.48, 1);
+gfx_line(play_x, btn_y, play_x + play_w - 1, btn_y);
+gfx_line(play_x, btn_y + btn_h - 1, play_x + play_w - 1, btn_y + btn_h - 1);
+gfx_line(play_x, btn_y, play_x, btn_y + btn_h - 1);
+gfx_line(play_x + play_w - 1, btn_y, play_x + play_w - 1, btn_y + btn_h - 1);
+gfx_setfont(2, "Arial", 11);
+play_hover ? gfx_set(0.85, 0.95, 0.98, 1) : gfx_set(0.60, 0.72, 0.80, 1);
+gfx_measurestr("PLAY", tw, th);
+gfx_x = play_x + (play_w - tw) / 2; gfx_y = btn_y + (btn_h - th) / 2;
+gfx_drawstr("PLAY");
+play_hover && mleft_clk ? ( gui_trig_note = 1; click_consumed = 1; );
+
+// "?" — quick-reference overlay (also: H key)
+help_w = 24; help_x = play_x - btn_pad - help_w;
+help_hover = mx >= help_x && mx < help_x + help_w && my >= btn_y && my < btn_y + btn_h;
+help_hover ? hover_kid = 202;
+help_hover ? gfx_set(0.20, 0.20, 0.24, 1) : gfx_set(0.14, 0.14, 0.17, 1);
+gfx_rect(help_x, btn_y, help_w, btn_h);
+help_hover ? gfx_set(0.60, 0.65, 0.72, 1) : gfx_set(0.30, 0.32, 0.36, 1);
+gfx_line(help_x, btn_y, help_x + help_w - 1, btn_y);
+gfx_line(help_x, btn_y + btn_h - 1, help_x + help_w - 1, btn_y + btn_h - 1);
+gfx_line(help_x, btn_y, help_x, btn_y + btn_h - 1);
+gfx_line(help_x + help_w - 1, btn_y, help_x + help_w - 1, btn_y + btn_h - 1);
+help_hover ? gfx_set(0.90, 0.92, 0.95, 1) : gfx_set(0.55, 0.58, 0.62, 1);
+gfx_measurestr("?", tw, th);
+gfx_x = help_x + (help_w - tw) / 2; gfx_y = btn_y + (btn_h - th) / 2;
+gfx_drawstr("?");
+help_hover && mleft_clk ? ( show_help = 1; click_consumed = 1; );
+
+// ============================================================
+// CONTROL PANEL — two rows + status bar
+// ============================================================
+panel_x = 24;
+panel_y_top = 50;
+panel_y_row1 = 64;
+panel_y_row2 = 142;
+knob_w = 56;
+sect_gap = 14;
+
+cur_x = panel_x;
+
+// ----- ROW 1: TUNING | AMP ENV | PITCH ENV | MASTER -----
+
+// TUNING — cyan accent
+section_header(cur_x, panel_y_top, 3 * knob_w, "TUNING", 0.20, 0.55, 0.70);
+new_v = toggle_btn(cur_x, panel_y_row1, slider3, 3, "MODE", "MIDI", "Hz");
+new_v != slider3 ? (slider3 = new_v; slider_automate(slider3); knob_global_changed = 1;);
+cur_x += knob_w;
+
+slider3 == 0 ? (
+  new_v = floor(knob(cur_x, panel_y_row1, slider1, 1, 0, 127, 69, "NOTE", 0, "", 0) + 0.5);
+  new_v != slider1 ? (slider1 = new_v; slider_automate(slider1); knob_global_changed = 1;);
+) : (
+  new_v = knob(cur_x, panel_y_row1, slider4, 4, 20, 8000, 440, "Hz", 4, "", 1);
+  new_v != slider4 ? (slider4 = new_v; slider_automate(slider4); knob_global_changed = 1;);
+);
+cur_x += knob_w;
+
+new_v = knob(cur_x, panel_y_row1, slider2, 2, -200, 200, 0, "FINE", 1, " c", 0);
+new_v != slider2 ? (slider2 = new_v; slider_automate(slider2); knob_global_changed = 1;);
+cur_x += knob_w;
+
+cur_x += sect_gap;
+
+// AMP ENV — green accent
+section_header(cur_x, panel_y_top, 4 * knob_w, "AMP ENV", 0.30, 0.60, 0.30);
+new_v = knob(cur_x, panel_y_row1, slider6, 6, 0.1, 5000, 5, "ATK", 5, "", 1);
+new_v != slider6 ? (slider6 = new_v; slider_automate(slider6); knob_global_changed = 1;);
+cur_x += knob_w;
+new_v = knob(cur_x, panel_y_row1, slider7, 7, 0.1, 5000, 200, "DEC", 5, "", 1);
+new_v != slider7 ? (slider7 = new_v; slider_automate(slider7); knob_global_changed = 1;);
+cur_x += knob_w;
+amp_susrel_x = cur_x;
+new_v = knob(cur_x, panel_y_row1, slider8, 8, 0, 1, 0.8, "SUS", 2, "", 0);
+new_v != slider8 ? (slider8 = new_v; slider_automate(slider8); knob_global_changed = 1;);
+cur_x += knob_w;
+new_v = knob(cur_x, panel_y_row1, slider9, 9, 1, 10000, 400, "REL", 5, "", 1);
+new_v != slider9 ? (slider9 = new_v; slider_automate(slider9); knob_global_changed = 1;);
+cur_x += knob_w;
+
+// SUS and REL are inert in ONE-SHOT mode (no note-off) — dim them
+slider30 > 0.5 ? (
+  gfx_set(0.10, 0.10, 0.12, 0.55);
+  gfx_rect(amp_susrel_x, panel_y_row1 - 4, 2 * knob_w, 66);
+);
+
+cur_x += sect_gap;
+
+// PITCH ENV — purple accent
+section_header(cur_x, panel_y_top, 3 * knob_w, "PITCH ENV", 0.50, 0.30, 0.60);
+new_v = knob(cur_x, panel_y_row1, slider11, 11, -36, 36, 0, "DEPTH", 1, " st", 0);
+new_v != slider11 ? (slider11 = new_v; slider_automate(slider11); knob_global_changed = 1;);
+cur_x += knob_w;
+new_v = knob(cur_x, panel_y_row1, slider12, 12, 0.1, 2000, 5, "ATK", 5, "", 1);
+new_v != slider12 ? (slider12 = new_v; slider_automate(slider12); knob_global_changed = 1;);
+cur_x += knob_w;
+new_v = knob(cur_x, panel_y_row1, slider13, 13, 1, 5000, 200, "DEC", 5, "", 1);
+new_v != slider13 ? (slider13 = new_v; slider_automate(slider13); knob_global_changed = 1;);
+cur_x += knob_w;
+
+cur_x += sect_gap;
+
+// MASTER — orange accent
+section_header(cur_x, panel_y_top, 5 * knob_w, "MASTER", 0.65, 0.45, 0.20);
+new_v = knob(cur_x, panel_y_row1, slider15, 15, -60, 12, -6, "GAIN", 1, " dB", 0);
+new_v != slider15 ? (slider15 = new_v; slider_automate(slider15); knob_global_changed = 1;);
+cur_x += knob_w;
+new_v = knob(cur_x, panel_y_row1, slider17, 17, 0, 24, 0, "DRIVE", 1, " dB", 0);
+new_v != slider17 ? (slider17 = new_v; slider_automate(slider17); knob_global_changed = 1;);
+cur_x += knob_w;
+new_v = toggle_btn(cur_x, panel_y_row1, slider16, 16, "NORM", "OFF", "ON");
+new_v != slider16 ? (slider16 = new_v; slider_automate(slider16); knob_global_changed = 1;);
+cur_x += knob_w;
+new_v = toggle_btn(cur_x, panel_y_row1, slider29, 29, "PHASE", "RST", "FREE");
+new_v != slider29 ? (slider29 = new_v; slider_automate(slider29); knob_global_changed = 1;);
+cur_x += knob_w;
+new_v = toggle_btn(cur_x, panel_y_row1, slider30, 30, "TRIG", "GATE", "1SHOT");
+new_v != slider30 ? (slider30 = new_v; slider_automate(slider30); knob_global_changed = 1;);
+cur_x += knob_w;
+
+// ----- ROW 2: VEL | NOISE | CLICK | LFO 1 | LFO 2 (48px cells to fit) -----
+cur_x = panel_x;
+knob_w = 48;
+
+section_header(cur_x, panel_y_row2 - 14, 2 * knob_w, "VELOCITY", 0.45, 0.50, 0.55);
+new_v = knob(cur_x, panel_y_row2, slider18, 18, 0, 100, 0, "->DEC", 0, "%", 0);
+new_v != slider18 ? (slider18 = new_v; slider_automate(slider18); knob_global_changed = 1;);
+cur_x += knob_w;
+new_v = knob(cur_x, panel_y_row2, slider19, 19, 0, 100, 0, "->PIT", 0, "%", 0);
+new_v != slider19 ? (slider19 = new_v; slider_automate(slider19); knob_global_changed = 1;);
+cur_x += knob_w;
+
+cur_x += sect_gap;
+
+// NOISE CHANNEL — yellow accent so it really stands out
+noise_section_x = cur_x;
+section_header(cur_x, panel_y_row2 - 14, 6 * knob_w, "NOISE CHANNEL", 0.65, 0.60, 0.20);
+new_v = toggle_btn(cur_x, panel_y_row2, slider20, 20, "ON/OFF", "OFF", "ON");
+new_v != slider20 ? (slider20 = new_v; slider_automate(slider20); knob_global_changed = 1;);
+cur_x += knob_w;
+new_v = knob(cur_x, panel_y_row2, slider21, 21, -80, 0, -12, "GAIN", 3, "", 0);
+new_v != slider21 ? (slider21 = new_v; slider_automate(slider21); knob_global_changed = 1;);
+cur_x += knob_w;
+new_v = knob(cur_x, panel_y_row2, slider22, 22, 0.1, 1000, 1, "ATK", 5, "", 1);
+new_v != slider22 ? (slider22 = new_v; slider_automate(slider22); knob_global_changed = 1;);
+cur_x += knob_w;
+new_v = knob(cur_x, panel_y_row2, slider23, 23, 1, 5000, 80, "DEC", 5, "", 1);
+new_v != slider23 ? (slider23 = new_v; slider_automate(slider23); knob_global_changed = 1;);
+cur_x += knob_w;
+new_v = knob(cur_x, panel_y_row2, slider25, 25, 20, 20000, 200, "HP", 4, "", 1);
+new_v != slider25 ? (slider25 = new_v; slider_automate(slider25); knob_global_changed = 1;);
+cur_x += knob_w;
+new_v = knob(cur_x, panel_y_row2, slider24, 24, 20, 20000, 8000, "LP", 4, "", 1);
+new_v != slider24 ? (slider24 = new_v; slider_automate(slider24); knob_global_changed = 1;);
+cur_x += knob_w;
+
+slider20 < 0.5 ? (
+  gfx_set(0.10, 0.10, 0.12, 0.55);
+  gfx_rect(noise_section_x + knob_w, panel_y_row2 - 4, 5 * knob_w, 66);
+);
+
+cur_x += sect_gap;
+
+// CLICK CHANNEL — red accent
+click_section_x = cur_x;
+section_header(cur_x, panel_y_row2 - 14, 3 * knob_w, "CLICK CHANNEL", 0.65, 0.30, 0.30);
+new_v = toggle_btn(cur_x, panel_y_row2, slider26, 26, "ON/OFF", "OFF", "ON");
+new_v != slider26 ? (slider26 = new_v; slider_automate(slider26); knob_global_changed = 1;);
+cur_x += knob_w;
+new_v = knob(cur_x, panel_y_row2, slider27, 27, -80, 0, -18, "GAIN", 3, "", 0);
+new_v != slider27 ? (slider27 = new_v; slider_automate(slider27); knob_global_changed = 1;);
+cur_x += knob_w;
+new_v = knob(cur_x, panel_y_row2, slider28, 28, 0.1, 30, 3, "LEN", 1, " ms", 0);
+new_v != slider28 ? (slider28 = new_v; slider_automate(slider28); knob_global_changed = 1;);
+cur_x += knob_w;
+
+slider26 < 0.5 ? (
+  gfx_set(0.10, 0.10, 0.12, 0.55);
+  gfx_rect(click_section_x + knob_w, panel_y_row2 - 4, 2 * knob_w, 66);
+);
+
+cur_x += sect_gap;
+
+// LFO 1 — magenta accent
+section_header(cur_x, panel_y_row2 - 14, 4 * knob_w, "LFO 1", 0.65, 0.30, 0.55);
+new_v = knob(cur_x, panel_y_row2, slider31, 31, 0.05, 30, 1, "RATE", 1, " Hz", 1);
+new_v != slider31 ? (slider31 = new_v; slider_automate(slider31); knob_global_changed = 1;);
+cur_x += knob_w;
+new_v = cycle_btn(cur_x, panel_y_row2, slider32, 32, "SHAPE", 4);
+new_v != slider32 ? (slider32 = new_v; slider_automate(slider32); knob_global_changed = 1;);
+cur_x += knob_w;
+new_v = knob(cur_x, panel_y_row2, slider33, 33, 0, 100, 0, "PITCH", 1, "c", 0);
+new_v != slider33 ? (slider33 = new_v; slider_automate(slider33); knob_global_changed = 1;);
+cur_x += knob_w;
+new_v = knob(cur_x, panel_y_row2, slider34, 34, 0, 1, 0, "AMP", 2, "", 0);
+new_v != slider34 ? (slider34 = new_v; slider_automate(slider34); knob_global_changed = 1;);
+cur_x += knob_w;
+
+cur_x += sect_gap;
+
+// LFO 2 — magenta-blue accent
+section_header(cur_x, panel_y_row2 - 14, 4 * knob_w, "LFO 2", 0.40, 0.40, 0.65);
+new_v = knob(cur_x, panel_y_row2, slider35, 35, 0.05, 30, 2.5, "RATE", 1, " Hz", 1);
+new_v != slider35 ? (slider35 = new_v; slider_automate(slider35); knob_global_changed = 1;);
+cur_x += knob_w;
+new_v = cycle_btn(cur_x, panel_y_row2, slider36, 36, "SHAPE", 4);
+new_v != slider36 ? (slider36 = new_v; slider_automate(slider36); knob_global_changed = 1;);
+cur_x += knob_w;
+new_v = knob(cur_x, panel_y_row2, slider37, 37, 0, 100, 0, "PITCH", 1, "c", 0);
+new_v != slider37 ? (slider37 = new_v; slider_automate(slider37); knob_global_changed = 1;);
+cur_x += knob_w;
+new_v = knob(cur_x, panel_y_row2, slider38, 38, 0, 1, 0, "AMP", 2, "", 0);
+new_v != slider38 ? (slider38 = new_v; slider_automate(slider38); knob_global_changed = 1;);
+cur_x += knob_w;
+
+knob_global_changed ? recompute_envelopes();
+
+// ============================================================
+// SPECTRUM VIEW — the partial layout on a log-frequency axis.
+// Ghost stems = set levels; bright stems = live per-partial envelopes;
+// red = muted; amber square = FM source. Octave gridlines sit at powers
+// of two around the fundamental (the brighter line is 1/1).
+// ============================================================
+viz_x = 24;
+viz_y = 214;
+viz_w = W - 48;
+viz_h = 118;
+spec_w = viz_w - 30;          // right edge reserved for the output meter
+
+gfx_set(0.115, 0.115, 0.14, 1);
+gfx_rect(viz_x, viz_y, viz_w, viz_h);
+gfx_set(0.22, 0.22, 0.27, 1);
+gfx_line(viz_x, viz_y, viz_x + viz_w - 1, viz_y);
+gfx_line(viz_x, viz_y + viz_h - 1, viz_x + viz_w - 1, viz_y + viz_h - 1);
+gfx_line(viz_x, viz_y, viz_x, viz_y + viz_h - 1);
+gfx_line(viz_x + viz_w - 1, viz_y, viz_x + viz_w - 1, viz_y + viz_h - 1);
+
+spec_x0 = viz_x + 8;
+spec_x1 = viz_x + spec_w - 8;
+spec_top = viz_y + 14;
+spec_base = viz_y + viz_h - 18;   // room below for Hz labels
+spec_h = spec_base - spec_top;
+
+// ---- auto-focus: fit the view to the occupied range, smoothed ----
+tgt_lo = log(20000); tgt_hi = log(20);
+sp_i = 0;
+loop(NUM_OSC,
+  // frame only SOUNDING partials — muted or silent ones shouldn't stretch
+  // the view (they're still one click away in the grid, shown in red)
+  (mute_save[sp_i] <= -900 && amp_db[sp_i] > DB_MIN + 0.5) ? (
+    f_i = base_hz * ratio_val[sp_i] * detune_factor[sp_i];
+    f_i = max(20, min(20000, f_i));
+    lf = log(f_i);
+    lf < tgt_lo ? tgt_lo = lf;
+    lf > tgt_hi ? tgt_hi = lf;
+  );
+  sp_i += 1;
+);
+tgt_hi < tgt_lo ? ( tgt_lo = log(20); tgt_hi = log(20000); );
+tgt_lo -= 0.3466; tgt_hi += 0.3466;          // half an octave of padding
+(tgt_hi - tgt_lo) < 1.3863 ? (               // never narrower than 2 octaves
+  mid_l = (tgt_hi + tgt_lo) * 0.5;
+  tgt_lo = mid_l - 0.6931; tgt_hi = mid_l + 0.6931;
+);
+tgt_lo = max(tgt_lo, log(20));
+tgt_hi = min(tgt_hi, log(20000));
+spec_lo_s == 0 ? ( spec_lo_s = tgt_lo; spec_hi_s = tgt_hi; );   // first frame: snap
+spec_lo_s += (tgt_lo - spec_lo_s) * 0.18;                        // then glide
+spec_hi_s += (tgt_hi - spec_hi_s) * 0.18;
+spec_span = max(0.01, spec_hi_s - spec_lo_s);
+
+// octave gridlines relative to the fundamental, with Hz labels
+oct_f = base_hz;
+while (log(oct_f) > spec_lo_s) ( oct_f *= 0.5; );
+oct_gap_px = (spec_x1 - spec_x0) * 0.6931 / spec_span;
+lbl_step = oct_gap_px >= 34 ? 1 : oct_gap_px >= 17 ? 2 : 4;
+oct_k = 0;
+while (log(oct_f) < spec_hi_s) (
+  lf = log(oct_f);
+  lf >= spec_lo_s ? (
+    gx = spec_x0 + (spec_x1 - spec_x0) * (lf - spec_lo_s) / spec_span;
+    abs(oct_f - base_hz) < 0.01 * base_hz ? gfx_set(0.30, 0.42, 0.48, 1) : gfx_set(0.17, 0.17, 0.21, 1);
+    gfx_line(gx, spec_top, gx, spec_base);
+    (oct_k % lbl_step) == 0 ? (
+      gfx_setfont(3, "Arial", 10);
+      abs(oct_f - base_hz) < 0.01 * base_hz ? gfx_set(0.42, 0.56, 0.64, 1) : gfx_set(0.32, 0.34, 0.40, 1);
+      oct_f >= 1000 ? sprintf(str_tmp, "%.1fk", oct_f / 1000) : sprintf(str_tmp, "%.0f", oct_f);
+      gfx_measurestr(str_tmp, tw, th);
+      gfx_x = gx - tw / 2; gfx_y = spec_base + 2;
+      gfx_drawstr(str_tmp);
+    );
+  );
+  oct_f *= 2;
+  oct_k += 1;
+);
+
+viz_hover_i = -1;
+viz_hover_d = 7;   // px hit radius
+sp_i = 0;
+loop(NUM_OSC,
+  f_i = base_hz * ratio_val[sp_i] * detune_factor[sp_i];
+  (f_i >= 20 && f_i <= 20000) ? (
+    sxp = spec_x0 + (spec_x1 - spec_x0) * (log(f_i) - spec_lo_s) / spec_span;
+    (sxp >= spec_x0 - 2 && sxp <= spec_x1 + 2) ? (
+    s_plim = ratio_prime_limit(sp_i);
+    mute_save[sp_i] > -900 ? (
+      // muted: dim red stem at the saved level (heights are dB-mapped,
+      // same scale as the volume bars below and the drag gesture)
+      gh = max(0, min(1, (mute_save[sp_i] - DB_MIN) / (DB_MAX - DB_MIN))) * spec_h;
+      gh > 1 ? (
+        gfx_set(0.45, 0.20, 0.18, 1);
+        gfx_rect(sxp - 1, spec_base - gh, 3, gh);
+      );
+      gfx_set(0.70, 0.30, 0.26, 1);
+      gfx_rect(sxp - 2, spec_base - max(gh, 2) - 1, 5, 2);
+    ) : (
+      // set level (dB-mapped) and this partial's live envelope fraction
+      gh = max(0, min(1, (amp_db[sp_i] - DB_MIN) / (DB_MAX - DB_MIN))) * spec_h;
+      lv_frac = env_val * velocity;
+      decay_time[sp_i] > 0 ? lv_frac *= osc_amp[sp_i];
+      lv_frac = min(1, lv_frac);
+      lh = gh * lv_frac;
+
+      // ghost stem = set level
+      gh > 1 ? (
+        set_prime_color(s_plim, 0.5);
+        gfx_rect(sxp - 1, spec_base - gh, 3, gh);
+      );
+      set_prime_color(s_plim, 0.9);
+      gfx_rect(sxp - 2, spec_base - max(gh, 2) - 1, 5, 2);
+      // live stem rides on top
+      lh > 1 ? (
+        set_prime_color(s_plim, 1.0);
+        gfx_rect(sxp - 1, spec_base - lh, 3, lh);
+      );
+    );
+    // amber marker: this partial is driving FM somewhere
+    fm_active && is_mod[sp_i] ? (
+      gfx_set(0.95, 0.70, 0.30, 1);
+      gfx_rect(sxp - 2, spec_top - 2, 5, 3);
+    );
+    // hover pick — nearest stem within a few px
+    (abs(mx - sxp) < viz_hover_d && my >= spec_top && my <= spec_base) ? (
+      viz_hover_d = abs(mx - sxp);
+      viz_hover_i = sp_i;
+    );
+    );
+  );
+  sp_i += 1;
+);
+
+// panel label + fundamental readout
+gfx_setfont(3, "Arial", 10);
+gfx_set(0.50, 0.55, 0.62, 1);
+gfx_x = viz_x + 8; gfx_y = viz_y + 3;
+gfx_drawstr("SPECTRUM");
+gfx_set(0.42, 0.44, 0.50, 1);
+gfx_x = viz_x + 82;
+gfx_drawstr("limit:");
+gfx_x += 8;
+set_prime_color(2, 1);  gfx_drawstr("2");  gfx_x += 6;
+set_prime_color(3, 1);  gfx_drawstr("3");  gfx_x += 6;
+set_prime_color(5, 1);  gfx_drawstr("5");  gfx_x += 6;
+set_prime_color(7, 1);  gfx_drawstr("7");  gfx_x += 6;
+set_prime_color(11, 1); gfx_drawstr("11"); gfx_x += 6;
+set_prime_color(13, 1); gfx_drawstr("13"); gfx_x += 6;
+set_prime_color(17, 1); gfx_drawstr("17"); gfx_x += 6;
+set_prime_color(19, 1); gfx_drawstr("19+");
+gfx_set(0.45, 0.62, 0.70, 1);
+base_hz >= 1000 ? sprintf(str_tmp, "1/1 = %.2f kHz", base_hz / 1000) : sprintf(str_tmp, "1/1 = %.1f Hz", base_hz);
+gfx_measurestr(str_tmp, tw, th);
+gfx_x = viz_x + spec_w - tw - 8; gfx_y = viz_y + 3;
+gfx_drawstr(str_tmp);
+
+viz_hover_i >= 0 ? (
+  hover_kid = 999;
+  f_i = base_hz * ratio_val[viz_hover_i] * detune_factor[viz_hover_i];
+  ratio_prime_limit(viz_hover_i) > 0 ? (
+    strcpy(str_fac, "");
+    factor_append(numer[viz_hover_i], str_fac);
+    strcat(str_fac, " / ");
+    factor_append(denom[viz_hover_i], str_fac);
+    sprintf(str_hover_desc, "PARTIAL %d  -  %g/%g  =  %s  =  %.1f Hz (%+.1fc)%s  -  drag: volume  |  right-click: mute  |  wheel: +/- 1 dB",
+      viz_hover_i + 1, numer[viz_hover_i], denom[viz_hover_i], str_fac, f_i,
+      1200 * log(ratio_val[viz_hover_i] * detune_factor[viz_hover_i]) / log(2),
+      mute_save[viz_hover_i] > -900 ? "  [muted]" : "");
+  ) : (
+    sprintf(str_hover_desc, "PARTIAL %d  -  %g/%g  =  %.1f Hz (%+.1fc)%s  -  drag: volume  |  right-click: mute  |  wheel: +/- 1 dB",
+      viz_hover_i + 1, numer[viz_hover_i], denom[viz_hover_i], f_i,
+      1200 * log(ratio_val[viz_hover_i] * detune_factor[viz_hover_i]) / log(2),
+      mute_save[viz_hover_i] > -900 ? "  [muted]" : "");
+  );
+
+  // stem interactions — same gestures as the volume bars below
+  !click_consumed ? (
+    mleft_clk ? (
+      mute_save[viz_hover_i] > -900 ? toggle_mute(viz_hover_i)
+      : ctrl_held ? (
+        def_db = viz_hover_i == 0 ? 0 : (-20 * log(viz_hover_i + 1) / log(10));
+        set_volume(viz_hover_i, def_db);
+      ) : spec_drag_idx = viz_hover_i;
+      click_consumed = 1;
+    );
+    mright_clk ? ( toggle_mute(viz_hover_i); click_consumed = 1; );
+    mouse_wheel != 0 && mute_save[viz_hover_i] <= -900 ? (
+      new_db = amp_db[viz_hover_i] + mouse_wheel / 120;
+      new_db > DB_MAX ? new_db = DB_MAX;
+      new_db < DB_MIN + 0.5 ? new_db = DB_MIN;
+      set_volume(viz_hover_i, new_db);
+      mouse_wheel = 0;
+    );
+  );
+);
+
+// stem volume drag — absolute: the stem follows the mouse height
+spec_drag_idx >= 0 ? (
+  mleft_down ? (
+    mute_save[spec_drag_idx] <= -900 ? (
+      yc = my; yc < spec_top ? yc = spec_top; yc > spec_base ? yc = spec_base;
+      ny = 1 - (yc - spec_top) / max(1, spec_h);
+      new_db = DB_MIN + ny * (DB_MAX - DB_MIN);
+      new_db < DB_MIN + 0.5 ? new_db = DB_MIN;
+      set_volume(spec_drag_idx, new_db);
+    );
+  ) : ( spec_drag_idx = -1; );
+);
+
+// output peak meter (per-frame peak from @sample, decayed here)
+vis_peak_disp = max(vis_peak, vis_peak_disp * 0.90);
+vis_peak = 0;
+m_x = viz_x + viz_w - 22;
+gfx_set(0.09, 0.09, 0.11, 1);
+gfx_rect(m_x, spec_top, 12, spec_h);
+pk_db = vis_peak_disp > 0.00001 ? 20 * log(vis_peak_disp) / log(10) : -60;
+pk_norm = max(0, min(1, (pk_db + 60) / 60));
+pk_norm > 0 ? (
+  pk_db > -0.1 ? gfx_set(0.95, 0.35, 0.30, 1)
+  : pk_db > -6 ? gfx_set(0.95, 0.75, 0.35, 1)
+  : gfx_set(0.40, 0.80, 0.55, 1);
+  gfx_rect(m_x, spec_top + spec_h * (1 - pk_norm), 12, spec_h * pk_norm);
+);
+gfx_setfont(3, "Arial", 10);
+gfx_set(0.45, 0.45, 0.52, 1);
+gfx_measurestr("OUT", tw, th);
+gfx_x = m_x + 6 - tw / 2; gfx_y = viz_y + 3;
+gfx_drawstr("OUT");
+
+// ============================================================
+// HOVER STATUS BAR — explains whichever control the cursor is over.
+// Knob/button hovers are known at this point; partial-cell hovers are
+// detected later in the grid loop and redraw this bar afterwards.
+// ============================================================
+status_y = 338;
+gfx_set(0.08, 0.08, 0.10, 1);
+gfx_rect(0, status_y, W, 22);
+gfx_set(0.18, 0.18, 0.22, 1);
+gfx_line(0, status_y, W, status_y);
+gfx_line(0, status_y + 21, W, status_y + 21);
+
+// description by hover_kid
+hover_kid == 999 ? 0 // spectrum hover already wrote the description
+: hover_kid == 201 ? sprintf(str_hover_desc, "PLAY  -  preview at the current settings (velocity 100); holds through the full attack + decay. shortcut: SPACE")
+: hover_kid == 202 ? sprintf(str_hover_desc, "HELP  -  quick-reference overlay of every mouse and keyboard shortcut. shortcut: H")
+: hover_kid == 1 ? sprintf(str_hover_desc, "MIDI NOTE  -  the note this drum responds to (when MODE is MIDI)")
+: hover_kid == 2 ? sprintf(str_hover_desc, "FINE  -  cents offset from base pitch (+/- 200c, 1c is 1/100 semitone)")
+: hover_kid == 3 ? sprintf(str_hover_desc, "MODE  -  switch between MIDI Note (per-note pitch) and fixed Hz (drum machine style)")
+: hover_kid == 4 ? sprintf(str_hover_desc, "Hz  -  fixed base frequency (only used when MODE is Hz)")
+: hover_kid == 6 ? sprintf(str_hover_desc, "AMP ATK  -  how fast the global envelope rises to peak. Drums: 0.1 to 5 ms")
+: hover_kid == 7 ? sprintf(str_hover_desc, "AMP DEC  -  body length. Tighter kick: 100-200 ms. Long sub: 400-800 ms")
+: hover_kid == 8 ? sprintf(str_hover_desc, "AMP SUS  -  GATE mode only: level held until note-off. In 1SHOT the decay always falls to silence")
+: hover_kid == 9 ? sprintf(str_hover_desc, "AMP REL  -  GATE mode only: fade after note-off. 1SHOT ignores note-off, so REL never runs")
+: hover_kid == 11 ? sprintf(str_hover_desc, "PITCH DEPTH  -  semitones the pitch sweeps at note-on. -36 = 8x freq drop. Try -24 to -48 for kick")
+: hover_kid == 12 ? sprintf(str_hover_desc, "PITCH ATK  -  how fast pitch climbs to peak. Usually 1 ms (instant) for drums")
+: hover_kid == 13 ? sprintf(str_hover_desc, "PITCH DEC  -  how fast the pitch sweep settles back. 50-100 ms for kick, longer for tom")
+: hover_kid == 15 ? sprintf(str_hover_desc, "MASTER GAIN  -  output level in dB")
+: hover_kid == 16 ? sprintf(str_hover_desc, "AUTO-NORM  -  scale partial sum to keep output stable when amps change")
+: hover_kid == 17 ? sprintf(str_hover_desc, "DRIVE  -  soft saturation. 0 dB = clean, push to 6-12 dB for grit")
+: hover_kid == 18 ? sprintf(str_hover_desc, "VEL -> DEC  -  velocity scales partial decay. *play with varying velocity to hear it*")
+: hover_kid == 19 ? sprintf(str_hover_desc, "VEL -> PIT  -  velocity scales pitch sweep depth. *play with varying velocity to hear it*")
+: hover_kid == 20 ? sprintf(str_hover_desc, "NOISE  -  enable/disable the filtered noise layer (snare buzz, hi-hat, transient air)")
+: hover_kid == 21 ? sprintf(str_hover_desc, "NOISE GAIN  -  level of noise layer in dB")
+: hover_kid == 22 ? sprintf(str_hover_desc, "NOISE ATK  -  how fast noise envelope rises")
+: hover_kid == 23 ? sprintf(str_hover_desc, "NOISE DEC  -  how fast noise envelope decays to zero")
+: hover_kid == 24 ? sprintf(str_hover_desc, "NOISE LP  -  lowpass cutoff: noise above this freq is filtered out")
+: hover_kid == 25 ? sprintf(str_hover_desc, "NOISE HP  -  highpass cutoff: noise below this freq is filtered out")
+: hover_kid == 26 ? sprintf(str_hover_desc, "CLICK  -  enable/disable a very short noise burst at note-on (transient attack)")
+: hover_kid == 27 ? sprintf(str_hover_desc, "CLICK GAIN  -  level of the click layer in dB")
+: hover_kid == 28 ? sprintf(str_hover_desc, "CLICK LEN  -  click duration in ms. 1-3 ms for typical attack click")
+: hover_kid == 29 ? sprintf(str_hover_desc, "PHASE  -  RST resets all phases on note-on (consistent attack). FREE keeps phases (no click).")
+: hover_kid == 30 ? sprintf(str_hover_desc, "TRIG  -  GATE: hold sustains, note-off releases. 1SHOT: fire-and-forget, decays to silence (SUS/REL inert).")
+: hover_kid == 31 ? sprintf(str_hover_desc, "LFO 1 RATE  -  speed in Hz. 0.5-3 Hz for organic wobble; 5+ Hz for tremolo-like motion")
+: hover_kid == 32 ? sprintf(str_hover_desc, "LFO 1 SHAPE  -  0 sine, 1 triangle, 2 square, 3 random sample-and-hold")
+: hover_kid == 33 ? sprintf(str_hover_desc, "LFO 1 PITCH  -  pitch modulation depth in cents. 3-10c for subtle vibrato; 50c for noticeable warble")
+: hover_kid == 34 ? sprintf(str_hover_desc, "LFO 1 AMP  -  amplitude modulation depth (0-1). 0.05-0.2 for subtle; 0.5+ for tremolo")
+: hover_kid == 35 ? sprintf(str_hover_desc, "LFO 2 RATE  -  speed in Hz. Pair with LFO 1 at a different rate for organic complexity")
+: hover_kid == 36 ? sprintf(str_hover_desc, "LFO 2 SHAPE  -  0 sine, 1 triangle, 2 square, 3 random sample-and-hold")
+: hover_kid == 37 ? sprintf(str_hover_desc, "LFO 2 PITCH  -  pitch modulation depth in cents")
+: hover_kid == 38 ? sprintf(str_hover_desc, "LFO 2 AMP  -  amplitude modulation depth (0-1)")
+: sprintf(str_hover_desc, "Hover any control for help.  SPACE previews the sound  |  press \"?\" or H for the full shortcut list");
+
+gfx_setfont(3, "Arial", 11);
+gfx_set(0.65, 0.75, 0.85, 1);
+gfx_x = 18;
+gfx_y = status_y + 5;
+gfx_drawstr(str_hover_desc);
+
+// ============================================================
+// PARTIAL BANK
+// ============================================================
+gfx_setfont(2, "Arial", 11);
+gfx_set(0.55, 0.55, 0.60, 1);
+gfx_x = 18; gfx_y = 366;
+gfx_drawstr("PARTIAL BANK");
+
+// view mode toggle button — cycles between BASIC, LFO, FM
+view_btn_x = 130;
+view_btn_y = 362;
+view_btn_w = 100;
+view_btn_h = 18;
+view_btn_hover = mx >= view_btn_x && mx < view_btn_x + view_btn_w && my >= view_btn_y && my < view_btn_y + view_btn_h;
+
+// background color per view: BASIC blue-ish, LFO purple, FM amber
+slider40 < 0.5 ? (
+  view_btn_hover ? gfx_set(0.18, 0.22, 0.28, 1) : gfx_set(0.14, 0.16, 0.20, 1);
+) : slider40 < 1.5 ? (
+  view_btn_hover ? gfx_set(0.30, 0.18, 0.32, 1) : gfx_set(0.22, 0.14, 0.24, 1);
+) : slider40 < 2.5 ? (
+  view_btn_hover ? gfx_set(0.32, 0.26, 0.14, 1) : gfx_set(0.24, 0.18, 0.10, 1);
+) : (
+  view_btn_hover ? gfx_set(0.34, 0.16, 0.16, 1) : gfx_set(0.26, 0.12, 0.12, 1);
+);
+gfx_rect(view_btn_x, view_btn_y, view_btn_w, view_btn_h);
+
+slider40 < 0.5 ? gfx_set(0.45, 0.65, 0.85, 1)
+: slider40 < 1.5 ? gfx_set(0.85, 0.50, 0.95, 1)
+: slider40 < 2.5 ? gfx_set(0.95, 0.70, 0.30, 1)
+: gfx_set(0.95, 0.45, 0.40, 1);
+gfx_line(view_btn_x, view_btn_y, view_btn_x + view_btn_w - 1, view_btn_y);
+gfx_line(view_btn_x, view_btn_y + view_btn_h - 1, view_btn_x + view_btn_w - 1, view_btn_y + view_btn_h - 1);
+gfx_line(view_btn_x, view_btn_y, view_btn_x, view_btn_y + view_btn_h - 1);
+gfx_line(view_btn_x + view_btn_w - 1, view_btn_y, view_btn_x + view_btn_w - 1, view_btn_y + view_btn_h - 1);
+
+gfx_setfont(3, "Arial", 10);
+slider40 < 0.5 ? gfx_set(0.75, 0.85, 0.95, 1)
+: slider40 < 1.5 ? gfx_set(0.95, 0.75, 1.0, 1)
+: slider40 < 2.5 ? gfx_set(1.0, 0.85, 0.55, 1)
+: gfx_set(1.0, 0.65, 0.60, 1);
+sprintf(str_tmp, slider40 < 0.5 ? "VIEW: BASIC" : slider40 < 1.5 ? "VIEW: LFO" : slider40 < 2.5 ? "VIEW: FM" : "VIEW: SAT");
+gfx_measurestr(str_tmp, tw, th);
+gfx_x = view_btn_x + (view_btn_w - tw) / 2;
+gfx_y = view_btn_y + (view_btn_h - th) / 2;
+gfx_drawstr(str_tmp);
+view_btn_hover && mleft_clk ? (
+  slider40 = (slider40 + 1) % 4;
+  slider_automate(slider40);
+  click_consumed = 1;
+);
+
+gfx_setfont(3, "Arial", 10);
+gfx_set(0.52, 0.52, 0.58, 1);
+gfx_x = 244; gfx_y = 368;
+slider40 < 0.5 ? gfx_drawstr("each cell:  numer / denom \xB7 decay (ms) \xB7 PE amount   |   click # mute   |   right-click # menu   |   tab between fields")
+: slider40 < 1.5 ? gfx_drawstr("each cell:  numer / denom \xB7 LFO 1 amount \xB7 LFO 2 amount   |   click # mute   |   right-click # menu")
+: slider40 < 2.5 ? gfx_drawstr("each cell:  numer / denom \xB7 FM source (0-32) \xB7 FM depth   |   click # mute   |   right-click # menu   |   amber dot = FM source")
+: gfx_drawstr("each cell:  numer / denom \xB7 SAT drive \xB7 odd/even blend   |   drive 0 = pure sine   |   shaping adds integer harmonics - stays JI");
+
+grid_y = 388;
+grid_pad = 24;
+cell_w = (W - 2 * grid_pad) / 16;
+cell_h = (H - grid_y - 8) / 2;
+
+drag_amp_idx >= 0 && !mleft_down ? drag_amp_idx = -1;
+
+gi = 0;
+loop(NUM_OSC,
+  row = gi >= 16 ? 1 : 0;
+  col = gi - row * 16;
+  cx = grid_pad + col * cell_w;
+  cy = grid_y + row * cell_h;
+
+  is_muted = mute_save[gi] > -900;
+
+  col > 0 ? (
+    gfx_set(0.13, 0.13, 0.16, 1);
+    gfx_line(cx, cy + 4, cx, cy + cell_h - 4);
+  );
+
+  pn_x = cx; pn_y = cy; pn_w = cell_w; pn_h = 14;
+  pn_hover = mx >= pn_x && mx < pn_x + pn_w && my >= pn_y && my < pn_y + pn_h;
+  pn_hover ? ( gfx_set(0.16, 0.17, 0.20, 1); gfx_rect(pn_x, pn_y, pn_w, pn_h); );
+  gfx_setfont(3, "Arial", 10);
+  is_muted ? gfx_set(0.85, 0.40, 0.30, 1) :
+    pn_hover ? gfx_set(0.65, 0.65, 0.72, 1) :
+    gfx_set(0.52, 0.52, 0.58, 1);
+  sprintf(str_tmp, "%d", gi + 1);
+  gfx_measurestr(str_tmp, tw, th);
+  gfx_x = pn_x + (pn_w - tw) / 2;
+  gfx_y = pn_y + 2;
+  gfx_drawstr(str_tmp);
+
+  // amber dot = this partial is currently used as an FM source somewhere
+  fm_active && is_mod[gi] ? (
+    gfx_set(0.95, 0.70, 0.30, 1);
+    gfx_circle(cx + 6, cy + 7, 2.5, 1, 1);
+  );
+
+  pn_hover ? (
+    hover_kid = 999;
+    fm_active && is_mod[gi] ?
+      sprintf(str_hover_desc, "PARTIAL %d  (amber dot: used as an FM source - it keeps running even when muted)  -  click: mute  |  right-click: menu", gi + 1)
+    : sprintf(str_hover_desc, "PARTIAL %d  -  click: mute/unmute  |  right-click: detune, octave shift, PE presets, reset", gi + 1);
+  );
+
+  pn_hover && mleft_clk ? ( toggle_mute(gi); click_consumed = 1; );
+
+  pn_hover && mright_clk ? (
+    gfx_x = mx; gfx_y = my;
+    menu_result = gfx_showmenu("Mute others|Unmute all||Detune +1\xA2|Detune -1\xA2|Detune +5\xA2|Detune -5\xA2|Detune +10\xA2|Detune -10\xA2|Reset detune||PE = 0|PE = 0.5|PE = 1|PE = 2||Octave up|Octave down||Reset partial");
+    menu_result == 1 ? (
+      j = 0;
+      loop(NUM_OSC,
+        j != gi && mute_save[j] <= -900 ? (
+          mute_save[j] = amp_db[j];
+          amp_db[j] = DB_MIN;
+        );
+        j += 1;
+      );
+      recompute_amp();
+    ) : menu_result == 2 ? (
+      j = 0;
+      loop(NUM_OSC,
+        mute_save[j] > -900 ? (
+          amp_db[j] = mute_save[j];
+          mute_save[j] = -999;
+        );
+        j += 1;
+      );
+      recompute_amp();
+    ) : menu_result == 3 ? ( detune_cents[gi] += 1; update_detune(gi); )
+    : menu_result == 4 ? ( detune_cents[gi] -= 1; update_detune(gi); )
+    : menu_result == 5 ? ( detune_cents[gi] += 5; update_detune(gi); )
+    : menu_result == 6 ? ( detune_cents[gi] -= 5; update_detune(gi); )
+    : menu_result == 7 ? ( detune_cents[gi] += 10; update_detune(gi); )
+    : menu_result == 8 ? ( detune_cents[gi] -= 10; update_detune(gi); )
+    : menu_result == 9 ? ( detune_cents[gi] = 0; update_detune(gi); )
+    : menu_result == 10 ? ( penv_amount[gi] = 0; )
+    : menu_result == 11 ? ( penv_amount[gi] = 0.5; )
+    : menu_result == 12 ? ( penv_amount[gi] = 1; )
+    : menu_result == 13 ? ( penv_amount[gi] = 2; )
+    : menu_result == 14 ? (
+      denom[gi] >= 2 && floor(denom[gi]) == denom[gi] && (floor(denom[gi]) & 1) == 0 ? denom[gi] = denom[gi] / 2 : numer[gi] = numer[gi] * 2;
+      update_ratio(gi);
+    ) : menu_result == 15 ? (
+      numer[gi] >= 2 && floor(numer[gi]) == numer[gi] && (floor(numer[gi]) & 1) == 0 ? numer[gi] = numer[gi] / 2 : denom[gi] = denom[gi] * 2;
+      update_ratio(gi);
+    ) : menu_result == 16 ? (
+      numer[gi] = gi + 1; denom[gi] = 1;
+      detune_cents[gi] = 0; decay_time[gi] = 0; penv_amount[gi] = 1;
+      sat_amt[gi] = 0; sat_mix[gi] = 1;
+      fm_src[gi] = 0; fm_depth[gi] = 0;
+      update_ratio(gi); update_detune(gi); update_decay(gi);
+      gi == 0 ? amp_db[gi] = 0 : amp_db[gi] = -20 * log(gi + 1) / log(10);
+      mute_save[gi] = -999;
+      recompute_amp();
+    );
+    click_consumed = 1;
+  );
+
+  detune_cents[gi] != 0 ? (
+    gfx_setfont(3, "Arial", 10);
+    detune_cents[gi] > 0 ? gfx_set(0.40, 0.85, 0.95, 1) : gfx_set(0.95, 0.65, 0.45, 1);
+    sprintf(str_tmp, "%+g\xA2", detune_cents[gi]);
+    gfx_measurestr(str_tmp, tw, th);
+    gfx_x = cx + cell_w - tw - 3;
+    gfx_y = cy + 3;
+    gfx_drawstr(str_tmp);
+  );
+
+  cell_plim = ratio_prime_limit(gi);
+
+  // numerator
+  num_x = cx + 4; num_y = cy + 16; num_w = cell_w - 8; num_h = 14;
+  num_field = gi + 1;
+  num_editing = (editing_field == num_field);
+  num_hover = mx >= num_x && mx < num_x + num_w && my >= num_y && my < num_y + num_h;
+  num_editing ? (
+    gfx_set(0.15, 0.28, 0.34, 1);
+    gfx_rect(num_x, num_y, num_w, num_h);
+    gfx_set(0.40, 0.78, 0.88, 1);
+    gfx_line(num_x, num_y, num_x + num_w - 1, num_y);
+    gfx_line(num_x, num_y + num_h - 1, num_x + num_w - 1, num_y + num_h - 1);
+    gfx_line(num_x, num_y, num_x, num_y + num_h - 1);
+    gfx_line(num_x + num_w - 1, num_y, num_x + num_w - 1, num_y + num_h - 1);
+  ) : num_hover ? ( gfx_set(0.16, 0.17, 0.20, 1); gfx_rect(num_x, num_y, num_w, num_h); );
+  gfx_setfont(4, "Arial", 12);
+  num_editing ? (
+    gfx_set(0.95, 0.95, 0.98, 1);
+    gfx_measurestr(str_edit, tw, th);
+    gfx_x = num_x + (num_w - tw) / 2; gfx_y = num_y + (num_h - th) / 2;
+    gfx_drawstr(str_edit);
+    floor(time_precise() * 2) % 2 == 0 ? ( gfx_x = num_x + (num_w + tw) / 2 + 1; gfx_drawstr("|"); );
+  ) : (
+    is_muted ? gfx_set(0.40, 0.40, 0.43, 1) : set_prime_color(cell_plim, 1.0);
+    sprintf(str_tmp, "%g", numer[gi]);
+    gfx_measurestr(str_tmp, tw, th);
+    gfx_x = num_x + (num_w - tw) / 2; gfx_y = num_y + (num_h - th) / 2;
+    gfx_drawstr(str_tmp);
+  );
+  num_hover && mleft_clk && !num_editing ? ( begin_field_edit(num_field); click_consumed = 1; );
+
+  div_y = cy + 31;
+  is_muted ? gfx_set(0.30, 0.30, 0.32, 1) : gfx_set(0.45, 0.55, 0.60, 1);
+  gfx_line(cx + 8, div_y, cx + cell_w - 8, div_y);
+
+  // denominator
+  den_x = cx + 4; den_y = cy + 33; den_w = cell_w - 8; den_h = 14;
+  den_field = gi + 33;
+  den_editing = (editing_field == den_field);
+  den_hover = mx >= den_x && mx < den_x + den_w && my >= den_y && my < den_y + den_h;
+  den_editing ? (
+    gfx_set(0.15, 0.28, 0.34, 1);
+    gfx_rect(den_x, den_y, den_w, den_h);
+    gfx_set(0.40, 0.78, 0.88, 1);
+    gfx_line(den_x, den_y, den_x + den_w - 1, den_y);
+    gfx_line(den_x, den_y + den_h - 1, den_x + den_w - 1, den_y + den_h - 1);
+    gfx_line(den_x, den_y, den_x, den_y + den_h - 1);
+    gfx_line(den_x + den_w - 1, den_y, den_x + den_w - 1, den_y + den_h - 1);
+  ) : den_hover ? ( gfx_set(0.16, 0.17, 0.20, 1); gfx_rect(den_x, den_y, den_w, den_h); );
+  gfx_setfont(4, "Arial", 12);
+  den_editing ? (
+    gfx_set(0.95, 0.95, 0.98, 1);
+    gfx_measurestr(str_edit, tw, th);
+    gfx_x = den_x + (den_w - tw) / 2; gfx_y = den_y + (den_h - th) / 2;
+    gfx_drawstr(str_edit);
+    floor(time_precise() * 2) % 2 == 0 ? ( gfx_x = den_x + (den_w + tw) / 2 + 1; gfx_drawstr("|"); );
+  ) : (
+    is_muted ? gfx_set(0.40, 0.40, 0.43, 1) : set_prime_color(cell_plim, 0.85);
+    sprintf(str_tmp, "%g", denom[gi]);
+    gfx_measurestr(str_tmp, tw, th);
+    gfx_x = den_x + (den_w - tw) / 2; gfx_y = den_y + (den_h - th) / 2;
+    gfx_drawstr(str_tmp);
+  );
+  den_hover && mleft_clk && !den_editing ? ( begin_field_edit(den_field); click_consumed = 1; );
+
+  // hover help for the ratio — shows the interval in cents (incl. detune),
+  // which is the number a JI ear actually wants to see
+  (num_hover || den_hover) ? (
+    hover_kid = 999;
+    sprintf(str_hover_desc, "RATIO %g/%g  =  %+.1f cents from 1/1  -  click to type  |  Tab / Shift-Tab cycles fields",
+      numer[gi], denom[gi], 1200 * log(ratio_val[gi] * detune_factor[gi]) / log(2));
+  );
+
+  // bar
+  bar_w = 26;
+  bar_x = cx + (cell_w - bar_w) / 2;
+  bar_top = cy + 53;
+  bar_bot = cy + cell_h - 50;
+  bar_h = bar_bot - bar_top;
+  hover_bar = mx >= bar_x && mx < bar_x + bar_w && my >= bar_top && my < bar_bot;
+
+  gfx_set(0.13, 0.13, 0.16, 1);
+  gfx_rect(bar_x, bar_top, bar_w, bar_h);
+
+  // db_val for display: when muted, show the saved level (so user can see/think
+  // about the partial's volume without unmuting it — useful when using a muted
+  // partial as a pure FM modulator).
+  db_val = is_muted ? mute_save[gi] : amp_db[gi];
+  db_norm = (db_val - DB_MIN) / (DB_MAX - DB_MIN);
+  db_norm < 0 ? db_norm = 0;
+  db_norm > 1 ? db_norm = 1;
+  fill_h = db_norm * bar_h;
+
+  is_muted ? (
+    // muted: dim red fill, scaled to saved-level brightness
+    bright = 0.40 + 0.45 * db_norm;
+    gfx_set(0.55 * bright, 0.20 * bright, 0.20 * bright, 1);
+  ) : (
+    bright = 0.45 + 0.45 * db_norm;
+    drag_amp_idx == gi ?
+      gfx_set(1.00 * bright, 0.62 * bright, 0.30 * bright, 1) :
+      gfx_set(0.28 * bright, 0.65 * bright, 0.78 * bright, 1);
+  );
+  fill_h > 0 ? gfx_rect(bar_x, bar_bot - fill_h, bar_w, fill_h);
+  fill_h > 0 ? (
+    is_muted ? gfx_set(0.85, 0.40, 0.35, 1) :
+      drag_amp_idx == gi ? gfx_set(1.00, 0.75, 0.45, 1) :
+      gfx_set(0.45, 0.85, 0.95, 1);
+    gfx_line(bar_x, bar_bot - fill_h, bar_x + bar_w, bar_bot - fill_h);
+  );
+
+  hover_bar && drag_amp_idx == -1 ? (
+    gfx_set(0.30, 0.30, 0.36, 1);
+    gfx_line(bar_x, bar_top, bar_x + bar_w - 1, bar_top);
+    gfx_line(bar_x, bar_bot - 1, bar_x + bar_w - 1, bar_bot - 1);
+    gfx_line(bar_x, bar_top, bar_x, bar_bot - 1);
+    gfx_line(bar_x + bar_w - 1, bar_top, bar_x + bar_w - 1, bar_bot - 1);
+  );
+
+  hover_bar && mleft_clk ? (
+    ctrl_held ? (
+      def_db = gi == 0 ? 0 : (-20 * log(gi + 1) / log(10));
+      set_volume(gi, def_db);
+    ) : ( drag_amp_idx = gi; );
+    click_consumed = 1;
+  );
+
+  hover_bar && mright_clk ? ( toggle_mute(gi); click_consumed = 1; );
+
+  // mouse wheel on a volume bar: +/- 1 dB per notch (unmuted partials only)
+  hover_bar && mouse_wheel != 0 && !is_muted && drag_amp_idx == -1 ? (
+    new_db = amp_db[gi] + mouse_wheel / 120;
+    new_db > DB_MAX ? new_db = DB_MAX;
+    new_db < DB_MIN + 0.5 ? new_db = DB_MIN;
+    set_volume(gi, new_db);
+    mouse_wheel = 0;
+  );
+
+  hover_bar ? (
+    hover_kid = 999;
+    is_muted ?
+      sprintf(str_hover_desc, "VOLUME (muted, saved %.1f dB)  -  right-click: unmute", mute_save[gi])
+    : sprintf(str_hover_desc, "VOLUME %.1f dB  -  drag: set  |  wheel: +/- 1 dB  |  ctrl-click: reset to 1/n  |  right-click: mute", amp_db[gi]);
+  );
+
+  // dB readout — for muted partials, show "M:<saved level>" so the user can
+  // see the volume the partial WOULD be at, useful for FM-modulator workflows.
+  gfx_setfont(3, "Arial", 10);
+  is_muted ? (
+    gfx_set(0.95, 0.50, 0.40, 1);
+    mute_save[gi] <= DB_MIN ? sprintf(str_tmp, "M:-inf") : sprintf(str_tmp, "M:%.1f", mute_save[gi]);
+  ) : db_val <= DB_MIN ? ( gfx_set(0.40, 0.40, 0.45, 1); sprintf(str_tmp, "-inf"); )
+  : ( gfx_set(0.55, 0.55, 0.60, 1); sprintf(str_tmp, "%.1f", db_val); );
+  gfx_measurestr(str_tmp, tw, th);
+  gfx_x = cx + (cell_w - tw) / 2;
+  gfx_y = cy + cell_h - 46;
+  gfx_drawstr(str_tmp);
+
+  // Bottom-row left field — view-aware:
+  //   BASIC: decay (ms)
+  //   LFO:   LFO 1 amount
+  //   FM:    FM source (which partial modulates this one)
+  dec_x = cx + 4; dec_y = cy + cell_h - 32; dec_w = cell_w - 8; dec_h = 14;
+  dec_field = slider40 < 0.5 ? (gi + 65) : slider40 < 1.5 ? (gi + 129) : slider40 < 2.5 ? (gi + 193) : (gi + 257);
+  dec_editing = (editing_field == dec_field);
+  dec_hover = mx >= dec_x && mx < dec_x + dec_w && my >= dec_y && my < dec_y + dec_h;
+  dec_editing ? (
+    gfx_set(0.15, 0.28, 0.34, 1);
+    gfx_rect(dec_x, dec_y, dec_w, dec_h);
+    gfx_set(0.40, 0.78, 0.88, 1);
+    gfx_line(dec_x, dec_y, dec_x + dec_w - 1, dec_y);
+    gfx_line(dec_x, dec_y + dec_h - 1, dec_x + dec_w - 1, dec_y + dec_h - 1);
+    gfx_line(dec_x, dec_y, dec_x, dec_y + dec_h - 1);
+    gfx_line(dec_x + dec_w - 1, dec_y, dec_x + dec_w - 1, dec_y + dec_h - 1);
+  ) : dec_hover ? ( gfx_set(0.16, 0.17, 0.20, 1); gfx_rect(dec_x, dec_y, dec_w, dec_h); );
+  gfx_setfont(3, "Arial", 10);
+  dec_editing ? (
+    gfx_set(0.95, 0.95, 0.98, 1);
+    gfx_measurestr(str_edit, tw, th);
+    gfx_x = dec_x + (dec_w - tw) / 2; gfx_y = dec_y + (dec_h - th) / 2;
+    gfx_drawstr(str_edit);
+    floor(time_precise() * 2) % 2 == 0 ? ( gfx_x = dec_x + (dec_w + tw) / 2 + 1; gfx_drawstr("|"); );
+  ) : slider40 < 0.5 ? (
+    decay_time[gi] > 0 ? (
+      gfx_set(0.95, 0.78, 0.35, 1);
+      decay_time[gi] >= 1000 ? sprintf(str_tmp, "%.1fs", decay_time[gi] / 1000) : sprintf(str_tmp, "%dms", floor(decay_time[gi]));
+    ) : (
+      gfx_set(0.30, 0.30, 0.34, 1);
+      sprintf(str_tmp, "-");
+    );
+    gfx_measurestr(str_tmp, tw, th);
+    gfx_x = dec_x + (dec_w - tw) / 2; gfx_y = dec_y + (dec_h - th) / 2;
+    gfx_drawstr(str_tmp);
+  ) : slider40 < 1.5 ? (
+    l1_disp = lfo1_amt[gi];
+    l1_on = (slider33 > 0 || slider34 > 0);
+    abs(l1_disp) < 0.001 ? ( gfx_set(0.35, 0.35, 0.40, 1); sprintf(str_tmp, "L1 0"); )
+    : abs(l1_disp - 1) < 0.001 ? ( l1_on ? gfx_set(0.85, 0.55, 0.95, 1) : gfx_set(0.38, 0.36, 0.42, 1); sprintf(str_tmp, "L1 1"); )
+    : ( l1_on ? gfx_set(0.85, 0.55, 0.95, 1) : gfx_set(0.48, 0.42, 0.50, 1); sprintf(str_tmp, "L1 %.2f", l1_disp); );
+    gfx_measurestr(str_tmp, tw, th);
+    gfx_x = dec_x + (dec_w - tw) / 2; gfx_y = dec_y + (dec_h - th) / 2;
+    gfx_drawstr(str_tmp);
+  ) : slider40 < 2.5 ? (
+    fm_s_disp = floor(fm_src[gi]);
+    fm_depth[gi] > 0.001 ? gfx_set(0.95, 0.70, 0.30, 1) : gfx_set(0.40, 0.37, 0.33, 1);
+    sprintf(str_tmp, "src %d", fm_s_disp + 1);
+    gfx_measurestr(str_tmp, tw, th);
+    gfx_x = dec_x + (dec_w - tw) / 2; gfx_y = dec_y + (dec_h - th) / 2;
+    gfx_drawstr(str_tmp);
+  ) : (
+    sat_d_disp = sat_amt[gi];
+    abs(sat_d_disp) < 0.001 ? ( gfx_set(0.35, 0.35, 0.40, 1); sprintf(str_tmp, "drv 0"); )
+    : ( gfx_set(0.95, 0.50, 0.45, 1); sprintf(str_tmp, "drv %.2f", sat_d_disp); );
+    gfx_measurestr(str_tmp, tw, th);
+    gfx_x = dec_x + (dec_w - tw) / 2; gfx_y = dec_y + (dec_h - th) / 2;
+    gfx_drawstr(str_tmp);
+  );
+  dec_hover && !dec_editing ? (
+    hover_kid = 999;
+    slider40 < 0.5 ? sprintf(str_hover_desc, "PARTIAL DECAY  -  per-partial decay in ms (\"-\" = follow global env)  -  drag vertically  |  click to type  |  right-click: presets")
+    : slider40 < 1.5 ? sprintf(str_hover_desc, "LFO 1 AMOUNT  -  how much LFO 1 affects this partial (0-1)  -  drag vertically  |  click to type  |  right-click: presets")
+    : slider40 < 2.5 ? sprintf(str_hover_desc, "FM SOURCE  -  which partial modulates this one  -  drag vertically  |  click to type (1-32)  |  right-click: presets")
+    : sprintf(str_hover_desc, "SAT DRIVE  -  0 = pure sine; higher = adds integer harmonics of this partial (stays JI)  -  drag  |  type  |  right-click");
+  );
+  // click+drag adjusts, click+release edits, right-click menu
+  dec_hover && mleft_clk && !dec_editing && cell_drag_id == -1 ? (
+    cell_drag_id = dec_field;
+    cell_drag_start_y = my;
+    cell_drag_start_val = slider40 < 0.5 ? decay_time[gi] : slider40 < 1.5 ? lfo1_amt[gi] : slider40 < 2.5 ? fm_src[gi] : sat_amt[gi];
+    cell_drag_active = 0;
+    cell_drag_fine = (mouse_cap & 8) ? 1 : 0;
+    click_consumed = 1;
+  );
+  dec_hover && mright_clk ? (
+    gfx_x = mx; gfx_y = my;
+    slider40 < 0.5 ? (
+      dec_menu_result = gfx_showmenu("0 ms (no per-partial decay)|10 ms|50 ms|100 ms|200 ms|500 ms|1 s|2 s|5 s||Halve|Double||Reset to none");
+      dec_menu_result == 1 ? decay_time[gi] = 0
+      : dec_menu_result == 2 ? decay_time[gi] = 10
+      : dec_menu_result == 3 ? decay_time[gi] = 50
+      : dec_menu_result == 4 ? decay_time[gi] = 100
+      : dec_menu_result == 5 ? decay_time[gi] = 200
+      : dec_menu_result == 6 ? decay_time[gi] = 500
+      : dec_menu_result == 7 ? decay_time[gi] = 1000
+      : dec_menu_result == 8 ? decay_time[gi] = 2000
+      : dec_menu_result == 9 ? decay_time[gi] = 5000
+      : dec_menu_result == 10 ? decay_time[gi] = max(0, decay_time[gi] * 0.5)
+      : dec_menu_result == 11 ? decay_time[gi] = min(60000, decay_time[gi] * 2)
+      : dec_menu_result == 12 ? decay_time[gi] = 0;
+      dec_menu_result > 0 ? update_decay(gi);
+    ) : slider40 < 1.5 ? (
+      l1_menu_result = gfx_showmenu("LFO 1 amount:|0 (no LFO 1)|0.25|0.5|0.75|1 (full)||Reset to 1");
+      l1_menu_result == 2 ? lfo1_amt[gi] = 0
+      : l1_menu_result == 3 ? lfo1_amt[gi] = 0.25
+      : l1_menu_result == 4 ? lfo1_amt[gi] = 0.5
+      : l1_menu_result == 5 ? lfo1_amt[gi] = 0.75
+      : l1_menu_result == 6 ? lfo1_amt[gi] = 1
+      : l1_menu_result == 7 ? lfo1_amt[gi] = 1;
+    ) : slider40 < 2.5 ? (
+      fm_src_menu = gfx_showmenu("FM source:|Self (this partial)|Previous (gi-1)|Next (gi+1)|Partial 1|Partial 2|Partial 3|Partial 4");
+      fm_src_menu == 2 ? fm_src[gi] = gi
+      : fm_src_menu == 3 ? fm_src[gi] = max(0, gi - 1)
+      : fm_src_menu == 4 ? fm_src[gi] = min(NUM_OSC - 1, gi + 1)
+      : fm_src_menu == 5 ? fm_src[gi] = 0
+      : fm_src_menu == 6 ? fm_src[gi] = 1
+      : fm_src_menu == 7 ? fm_src[gi] = 2
+      : fm_src_menu == 8 ? fm_src[gi] = 3;
+    ) : (
+      sat_d_menu = gfx_showmenu("SAT drive:|0 (pure sine)|0.1|0.25|0.5|0.75|1 (max)||Halve|Double||Reset to 0");
+      sat_d_menu == 2 ? sat_amt[gi] = 0
+      : sat_d_menu == 3 ? sat_amt[gi] = 0.1
+      : sat_d_menu == 4 ? sat_amt[gi] = 0.25
+      : sat_d_menu == 5 ? sat_amt[gi] = 0.5
+      : sat_d_menu == 6 ? sat_amt[gi] = 0.75
+      : sat_d_menu == 7 ? sat_amt[gi] = 1
+      : sat_d_menu == 8 ? sat_amt[gi] = sat_amt[gi] * 0.5
+      : sat_d_menu == 9 ? sat_amt[gi] = min(1, max(0.05, sat_amt[gi]) * 2)
+      : sat_d_menu == 10 ? sat_amt[gi] = 0;
+    );
+    click_consumed = 1;
+  );
+
+  // Bottom-row right field — view-aware:
+  //   BASIC: PE amount
+  //   LFO:   LFO 2 amount
+  //   FM:    FM depth (modulation index)
+  pe_x = cx + 4; pe_y = cy + cell_h - 16; pe_w = cell_w - 8; pe_h = 14;
+  pe_field = slider40 < 0.5 ? (gi + 97) : slider40 < 1.5 ? (gi + 161) : slider40 < 2.5 ? (gi + 225) : (gi + 289);
+  pe_editing = (editing_field == pe_field);
+  pe_hover = mx >= pe_x && mx < pe_x + pe_w && my >= pe_y && my < pe_y + pe_h;
+  pe_editing ? (
+    gfx_set(0.15, 0.28, 0.34, 1);
+    gfx_rect(pe_x, pe_y, pe_w, pe_h);
+    gfx_set(0.40, 0.78, 0.88, 1);
+    gfx_line(pe_x, pe_y, pe_x + pe_w - 1, pe_y);
+    gfx_line(pe_x, pe_y + pe_h - 1, pe_x + pe_w - 1, pe_y + pe_h - 1);
+    gfx_line(pe_x, pe_y, pe_x, pe_y + pe_h - 1);
+    gfx_line(pe_x + pe_w - 1, pe_y, pe_x + pe_w - 1, pe_y + pe_h - 1);
+  ) : pe_hover ? ( gfx_set(0.16, 0.17, 0.20, 1); gfx_rect(pe_x, pe_y, pe_w, pe_h); );
+  gfx_setfont(3, "Arial", 10);
+  pe_editing ? (
+    gfx_set(0.95, 0.95, 0.98, 1);
+    gfx_measurestr(str_edit, tw, th);
+    gfx_x = pe_x + (pe_w - tw) / 2; gfx_y = pe_y + (pe_h - th) / 2;
+    gfx_drawstr(str_edit);
+    floor(time_precise() * 2) % 2 == 0 ? ( gfx_x = pe_x + (pe_w + tw) / 2 + 1; gfx_drawstr("|"); );
+  ) : slider40 < 0.5 ? (
+    pe_disp = penv_amount[gi];
+    pe_on = abs(slider11) > 0.01;   // PITCH ENV depth 0 = these fields are inert
+    abs(pe_disp) < PE_EPS ? ( gfx_set(0.35, 0.35, 0.40, 1); sprintf(str_tmp, "PE 0"); )
+    : abs(pe_disp - 1) < PE_EPS ? ( pe_on ? gfx_set(0.55, 0.65, 0.75, 1) : gfx_set(0.35, 0.35, 0.40, 1); sprintf(str_tmp, "PE 1"); )
+    : ( pe_on ? gfx_set(0.85, 0.55, 0.85, 1) : gfx_set(0.48, 0.42, 0.48, 1); sprintf(str_tmp, "PE %.2g", pe_disp); );
+    gfx_measurestr(str_tmp, tw, th);
+    gfx_x = pe_x + (pe_w - tw) / 2; gfx_y = pe_y + (pe_h - th) / 2;
+    gfx_drawstr(str_tmp);
+  ) : slider40 < 1.5 ? (
+    l2_disp = lfo2_amt[gi];
+    l2_on = (slider37 > 0 || slider38 > 0);
+    abs(l2_disp) < 0.001 ? ( gfx_set(0.35, 0.35, 0.40, 1); sprintf(str_tmp, "L2 0"); )
+    : abs(l2_disp - 1) < 0.001 ? ( l2_on ? gfx_set(0.55, 0.65, 1.0, 1) : gfx_set(0.36, 0.38, 0.44, 1); sprintf(str_tmp, "L2 1"); )
+    : ( l2_on ? gfx_set(0.55, 0.65, 1.0, 1) : gfx_set(0.42, 0.44, 0.52, 1); sprintf(str_tmp, "L2 %.2f", l2_disp); );
+    gfx_measurestr(str_tmp, tw, th);
+    gfx_x = pe_x + (pe_w - tw) / 2; gfx_y = pe_y + (pe_h - th) / 2;
+    gfx_drawstr(str_tmp);
+  ) : slider40 < 2.5 ? (
+    fm_d_disp = fm_depth[gi];
+    abs(fm_d_disp) < 0.001 ? ( gfx_set(0.35, 0.35, 0.40, 1); sprintf(str_tmp, "fm 0"); )
+    : ( gfx_set(0.95, 0.70, 0.30, 1); sprintf(str_tmp, "fm %.2f", fm_d_disp); );
+    gfx_measurestr(str_tmp, tw, th);
+    gfx_x = pe_x + (pe_w - tw) / 2; gfx_y = pe_y + (pe_h - th) / 2;
+    gfx_drawstr(str_tmp);
+  ) : (
+    sat_m_disp = sat_mix[gi];
+    sat_amt[gi] < 0.001 ? gfx_set(0.35, 0.35, 0.40, 1) : gfx_set(0.95, 0.60, 0.50, 1);
+    sat_m_disp < 0.001 ? sprintf(str_tmp, "even")
+    : sat_m_disp > 0.999 ? sprintf(str_tmp, "odd")
+    : sprintf(str_tmp, "o/e %.2f", sat_m_disp);
+    gfx_measurestr(str_tmp, tw, th);
+    gfx_x = pe_x + (pe_w - tw) / 2; gfx_y = pe_y + (pe_h - th) / 2;
+    gfx_drawstr(str_tmp);
+  );
+  pe_hover && !pe_editing ? (
+    hover_kid = 999;
+    slider40 < 0.5 ? sprintf(str_hover_desc, "PE AMOUNT  -  how much this partial follows the pitch envelope (1 = full, 0 = none, negative = inverse)  -  drag  |  type  |  right-click")
+    : slider40 < 1.5 ? sprintf(str_hover_desc, "LFO 2 AMOUNT  -  how much LFO 2 affects this partial (0-1)  -  drag vertically  |  click to type  |  right-click: presets")
+    : slider40 < 2.5 ? sprintf(str_hover_desc, "FM DEPTH  -  modulation index (0 = off; 0.5-2 subtle to metallic; 5+ chaotic)  -  drag  |  type  |  right-click: presets")
+    : sprintf(str_hover_desc, "ODD/EVEN  -  0 = even harmonics (2f, 4f...), 1 = odd (3f, 5f...), between blends  -  drag  |  type  |  right-click");
+  );
+  // click+drag adjusts, click+release edits, right-click menu
+  pe_hover && mleft_clk && !pe_editing && cell_drag_id == -1 ? (
+    cell_drag_id = pe_field;
+    cell_drag_start_y = my;
+    cell_drag_start_val = slider40 < 0.5 ? penv_amount[gi] : slider40 < 1.5 ? lfo2_amt[gi] : slider40 < 2.5 ? fm_depth[gi] : sat_mix[gi];
+    cell_drag_active = 0;
+    cell_drag_fine = (mouse_cap & 8) ? 1 : 0;
+    click_consumed = 1;
+  );
+  pe_hover && mright_clk ? (
+    gfx_x = mx; gfx_y = my;
+    slider40 < 0.5 ? (
+      pe_menu_result = gfx_showmenu("0 (no follow)|0.25|0.5|0.75|1 (full follow)|1.5|2 (double)||-0.5|-1 (inverse)||Halve|Double|Negate||Reset to 1");
+      pe_menu_result == 1 ? penv_amount[gi] = 0
+      : pe_menu_result == 2 ? penv_amount[gi] = 0.25
+      : pe_menu_result == 3 ? penv_amount[gi] = 0.5
+      : pe_menu_result == 4 ? penv_amount[gi] = 0.75
+      : pe_menu_result == 5 ? penv_amount[gi] = 1
+      : pe_menu_result == 6 ? penv_amount[gi] = 1.5
+      : pe_menu_result == 7 ? penv_amount[gi] = 2
+      : pe_menu_result == 8 ? penv_amount[gi] = -0.5
+      : pe_menu_result == 9 ? penv_amount[gi] = -1
+      : pe_menu_result == 10 ? penv_amount[gi] = penv_amount[gi] * 0.5
+      : pe_menu_result == 11 ? penv_amount[gi] = max(-4, min(4, penv_amount[gi] * 2))
+      : pe_menu_result == 12 ? penv_amount[gi] = -penv_amount[gi]
+      : pe_menu_result == 13 ? penv_amount[gi] = 1;
+    ) : slider40 < 1.5 ? (
+      l2_menu_result = gfx_showmenu("LFO 2 amount:|0 (no LFO 2)|0.25|0.5|0.75|1 (full)||Reset to 1");
+      l2_menu_result == 2 ? lfo2_amt[gi] = 0
+      : l2_menu_result == 3 ? lfo2_amt[gi] = 0.25
+      : l2_menu_result == 4 ? lfo2_amt[gi] = 0.5
+      : l2_menu_result == 5 ? lfo2_amt[gi] = 0.75
+      : l2_menu_result == 6 ? lfo2_amt[gi] = 1
+      : l2_menu_result == 7 ? lfo2_amt[gi] = 1;
+    ) : slider40 < 2.5 ? (
+      fm_d_menu = gfx_showmenu("FM depth:|0 (off)|0.25|0.5|1.0|2.0|3.0|5.0||Halve|Double||Reset to 0");
+      fm_d_menu == 2 ? fm_depth[gi] = 0
+      : fm_d_menu == 3 ? fm_depth[gi] = 0.25
+      : fm_d_menu == 4 ? fm_depth[gi] = 0.5
+      : fm_d_menu == 5 ? fm_depth[gi] = 1.0
+      : fm_d_menu == 6 ? fm_depth[gi] = 2.0
+      : fm_d_menu == 7 ? fm_depth[gi] = 3.0
+      : fm_d_menu == 8 ? fm_depth[gi] = 5.0
+      : fm_d_menu == 9 ? fm_depth[gi] = max(0, fm_depth[gi] * 0.5)
+      : fm_d_menu == 10 ? fm_depth[gi] = min(10, fm_depth[gi] * 2)
+      : fm_d_menu == 11 ? fm_depth[gi] = 0;
+    ) : (
+      sat_m_menu = gfx_showmenu("Odd/even blend:|0 (even: 2f, 4f)|0.25|0.5|0.75|1 (odd: 3f, 5f)||Reset to odd");
+      sat_m_menu == 2 ? sat_mix[gi] = 0
+      : sat_m_menu == 3 ? sat_mix[gi] = 0.25
+      : sat_m_menu == 4 ? sat_mix[gi] = 0.5
+      : sat_m_menu == 5 ? sat_mix[gi] = 0.75
+      : sat_m_menu == 6 ? sat_mix[gi] = 1
+      : sat_m_menu == 7 ? sat_mix[gi] = 1;
+    );
+    click_consumed = 1;
+  );
+
+  gi += 1;
+);
+
+// cell-field drag tracking (decay or PE) — runs after all cells rendered
+cell_drag_id > 0 ? (
+  // detect if mouse moved past threshold (then drag is "real", not just a click)
+  mleft_down && abs(my - cell_drag_start_y) > CELL_DRAG_THRESH ? cell_drag_active = 1;
+
+  // active drag: update value
+  cell_drag_active && mleft_down ? (
+    fid_drag = cell_drag_id;
+    // Use sensitivity latched at drag start — don't read mouse_cap live, or
+    // tapping Shift mid-drag would change sens and cause a sudden value jump.
+    sens_div = cell_drag_fine ? 800 : 200;
+    dy_drag = cell_drag_start_y - my;
+    fid_drag >= 65 && fid_drag <= 96 ? (
+      // decay: log scale 0.5..60000 ms, snap to 0 below 1 ms
+      idx_drag = fid_drag - 65;
+      log_d_min = log(0.5);
+      log_d_max = log(60000);
+      log_d_start = log(max(cell_drag_start_val, 0.5));
+      log_d_range = log_d_max - log_d_min;
+      new_log_d = log_d_start + dy_drag * (log_d_range / sens_div);
+      new_log_d = max(log_d_min, min(log_d_max, new_log_d));
+      new_d = exp(new_log_d);
+      new_d < 1 ? new_d = 0;
+      decay_time[idx_drag] = new_d;
+      update_decay(idx_drag);
+    ) : fid_drag >= 97 && fid_drag <= 128 ? (
+      // PE: linear -4..4
+      idx_drag = fid_drag - 97;
+      sens_pe = 8 / sens_div;
+      new_pe = cell_drag_start_val + dy_drag * sens_pe;
+      new_pe = max(-4, min(4, new_pe));
+      penv_amount[idx_drag] = new_pe;
+    ) : fid_drag >= 129 && fid_drag <= 160 ? (
+      // L1: linear 0..1
+      idx_drag = fid_drag - 129;
+      sens_l = 1 / sens_div;
+      new_l = cell_drag_start_val + dy_drag * sens_l;
+      new_l = max(0, min(1, new_l));
+      lfo1_amt[idx_drag] = new_l;
+    ) : fid_drag >= 161 && fid_drag <= 192 ? (
+      // L2: linear 0..1
+      idx_drag = fid_drag - 161;
+      sens_l = 1 / sens_div;
+      new_l = cell_drag_start_val + dy_drag * sens_l;
+      new_l = max(0, min(1, new_l));
+      lfo2_amt[idx_drag] = new_l;
+    ) : fid_drag >= 193 && fid_drag <= 224 ? (
+      // FM source: integer 0..NUM_OSC-1, snap to nearest integer
+      idx_drag = fid_drag - 193;
+      sens_src = NUM_OSC / sens_div;
+      new_src = cell_drag_start_val + dy_drag * sens_src;
+      new_src = max(0, min(NUM_OSC - 1, floor(new_src + 0.5)));
+      fm_src[idx_drag] = new_src;
+    ) : fid_drag >= 225 && fid_drag <= 256 ? (
+      // FM depth: linear 0..10
+      idx_drag = fid_drag - 225;
+      sens_fm = 10 / sens_div;
+      new_fm = cell_drag_start_val + dy_drag * sens_fm;
+      new_fm = max(0, min(10, new_fm));
+      fm_depth[idx_drag] = new_fm;
+    ) : fid_drag >= 257 && fid_drag <= 288 ? (
+      // SAT drive: linear 0..1
+      idx_drag = fid_drag - 257;
+      sens_s = 1 / sens_div;
+      new_s = cell_drag_start_val + dy_drag * sens_s;
+      sat_amt[idx_drag] = max(0, min(1, new_s));
+    ) : fid_drag >= 289 && fid_drag <= 320 ? (
+      // SAT odd/even blend: linear 0..1
+      idx_drag = fid_drag - 289;
+      sens_s = 1 / sens_div;
+      new_s = cell_drag_start_val + dy_drag * sens_s;
+      sat_mix[idx_drag] = max(0, min(1, new_s));
+    );
+  );
+
+  // release: if no actual drag happened, treat as click -> enter edit mode
+  !mleft_down ? (
+    cell_drag_active == 0 ? begin_field_edit(cell_drag_id);
+    cell_drag_id = -1;
+    cell_drag_active = 0;
+  );
+);
+
+// continuous bar drag
+drag_amp_idx >= 0 && mleft_down ? (
+  // Stay on the original column — don't paint across to other partials,
+  // and especially don't accidentally unmute a partial used as an FM modulator.
+  d_idx = drag_amp_idx;
+  d_row = d_idx >= 16 ? 1 : 0;
+  d_col = d_idx - d_row * 16;
+  // only update if the mouse is roughly within the cell's vertical bar zone
+  d_top = grid_y + d_row * cell_h + 53;
+  d_bot = grid_y + d_row * cell_h + cell_h - 50;
+  d_h = max(8, d_bot - d_top);
+  // skip update entirely if this partial is muted — preserve mute state
+  mute_save[d_idx] <= -900 ? (
+    yc = my; yc < d_top ? yc = d_top; yc > d_bot ? yc = d_bot;
+    ny = 1 - (yc - d_top) / d_h;
+    new_db = DB_MIN + ny * (DB_MAX - DB_MIN);
+    new_db < DB_MIN + 0.5 ? new_db = DB_MIN;
+    // raw write — no recompute_amp() per frame. flag dirty for mouse-up.
+    amp_db[d_idx] = new_db;
+    amp_dirty = 1;
+  );
+);
+
+// On mouse release after a drag, run the expensive recompute once.
+!mleft_down && amp_dirty ? (
+  recompute_amp();
+  amp_dirty = 0;
+);
+
+// If a partial cell wrote hover help, redraw the status bar text now (cells
+// are processed after the bar was drawn earlier in this frame).
+hover_kid == 999 ? (
+  gfx_set(0.08, 0.08, 0.10, 1);
+  gfx_rect(0, status_y + 1, W, 20);
+  gfx_setfont(3, "Arial", 11);
+  gfx_set(0.65, 0.75, 0.85, 1);
+  gfx_x = 18;
+  gfx_y = status_y + 5;
+  gfx_drawstr(str_hover_desc);
+);
+
+// ============================================================
+// HELP OVERLAY — "?" button or H key
+// ============================================================
+show_help ? (
+  gfx_set(0.05, 0.05, 0.07, 0.94);
+  gfx_rect(0, 0, W, H);
+  hx = 70; hy = 46;
+  gfx_setfont(1, "Arial", 18);
+  gfx_set(0.50, 0.88, 0.96, 1);
+  gfx_x = hx; gfx_y = hy; gfx_drawstr("MONODRUM  -  QUICK REFERENCE");
+  hy += 32;
+  gfx_setfont(3, "Arial", 12);
+  gfx_set(0.82, 0.86, 0.92, 1);
+  gfx_x = hx; gfx_y = hy; gfx_drawstr("SPACE  /  PLAY button        preview the sound, no MIDI needed"); hy += 19;
+  gfx_x = hx; gfx_y = hy; gfx_drawstr("mouse wheel                  adjust any knob or volume bar under the cursor"); hy += 19;
+  gfx_x = hx; gfx_y = hy; gfx_drawstr("shift-drag knob              4x fine sensitivity     ctrl-click knob: snap to default"); hy += 19;
+  hy += 10;
+  gfx_set(0.60, 0.90, 0.75, 1);
+  gfx_x = hx; gfx_y = hy; gfx_drawstr("PARTIAL CELLS"); hy += 19;
+  gfx_set(0.82, 0.86, 0.92, 1);
+  gfx_x = hx; gfx_y = hy; gfx_drawstr("click number                 mute / unmute (muted = red)"); hy += 19;
+  gfx_x = hx; gfx_y = hy; gfx_drawstr("right-click number           menu: detune, octave shift, PE presets, reset"); hy += 19;
+  gfx_x = hx; gfx_y = hy; gfx_drawstr("drag volume bar              set level     ctrl-click: reset to 1/n     right-click: mute"); hy += 19;
+  gfx_x = hx; gfx_y = hy; gfx_drawstr("bottom fields                drag vertically to adjust, click to type, Tab / Shift-Tab to cycle"); hy += 19;
+  gfx_x = hx; gfx_y = hy; gfx_drawstr("hover the ratio              shows the interval in cents from 1/1"); hy += 19;
+  gfx_x = hx; gfx_y = hy; gfx_drawstr("spectrum stems               drag: volume | right-click: mute | wheel: +/- 1 dB | ctrl-click: 1/n"); hy += 19;
+  gfx_x = hx; gfx_y = hy; gfx_drawstr("stem colors                  prime limit of the ratio (2 white, 3 blue, 5 green, 7 orange, 11 violet...)"); hy += 19;
+  gfx_x = hx; gfx_y = hy; gfx_drawstr("VIEW button                  switches bottom fields: BASIC (decay / PE), LFO, FM routing, SAT"); hy += 19;
+  gfx_x = hx; gfx_y = hy; gfx_drawstr("SAT view                     per-partial drive + odd/even blend - adds integer harmonics, stays JI"); hy += 19;
+  hy += 10;
+  gfx_set(0.95, 0.75, 0.40, 1);
+  gfx_x = hx; gfx_y = hy; gfx_drawstr("FM BETWEEN PARTIALS"); hy += 19;
+  gfx_set(0.82, 0.86, 0.92, 1);
+  gfx_x = hx; gfx_y = hy; gfx_drawstr("in FM view, each partial has a SOURCE (which partial modulates it) and a DEPTH (mod index)"); hy += 19;
+  gfx_x = hx; gfx_y = hy; gfx_drawstr("an amber dot on a partial number means it is currently driving FM somewhere"); hy += 19;
+  gfx_x = hx; gfx_y = hy; gfx_drawstr("a muted partial still works as a silent modulator - its bar shows M:<saved dB>"); hy += 19;
+  hy += 14;
+  gfx_set(0.55, 0.60, 0.66, 1);
+  gfx_x = hx; gfx_y = hy; gfx_drawstr("click anywhere or press H to close");
+);
+
+// ============================================================
+// TEXT INPUT
+// ============================================================
+editing_field > 0 ? (
+  cur_char = gfx_getchar();
+  while (cur_char > 0) (
+    cur_char == 13 ? commit_field_edit()
+    : cur_char == 27 ? ( editing_field = 0; edit_pristine = 0; )
+    : cur_char == 9 ? (
+      next_fid = next_field(editing_field, mouse_cap & 8);
+      commit_field_edit();
+      next_fid > 0 ? begin_field_edit(next_fid);
+    ) : cur_char == 8 ? (
+      edit_pristine ? ( strcpy(str_edit, ""); edit_pristine = 0; )
+      : ( elen = strlen(str_edit); elen > 0 ? strcpy_substr(str_edit, str_edit, 0, elen - 1); );
+    ) : cur_char >= 32 && cur_char <= 126 ? (
+      edit_pristine ? ( strcpy(str_edit, ""); edit_pristine = 0; );
+      sprintf(str_tmp2, "%c", cur_char);
+      strcat(str_edit, str_tmp2);
+    );
+    cur_char = gfx_getchar();
+  );
+) : (
+  // not editing: drain the key queue so stale keystrokes never leak into a
+  // future edit box, and handle the global shortcuts
+  cur_char = gfx_getchar();
+  while (cur_char > 0) (
+    cur_char == 32 ? gui_trig_note = 1
+    : (cur_char == 63 || cur_char == 104 || cur_char == 72) ? show_help = !show_help;
+    cur_char = gfx_getchar();
+  );
+);
+
+mleft_clk && !click_consumed && editing_field > 0 ? commit_field_edit();
+
+last_mouse_cap = mouse_cap;
+mouse_wheel = 0;

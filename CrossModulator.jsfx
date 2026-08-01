@@ -1,0 +1,327 @@
+desc:Cross Modulator (Ring / FM / AM / Env / Filter-FM + Band Select)
+author: thomas meier
+version: 4.3
+// @changelog
+//   + three new operations, each with ext or osc modulator: AM (carrier
+//     stays present alongside the sidebands), Envelope Transfer (2ms/60ms
+//     follower on the modulator gates the band - rhythm without pitch
+//     artifacts; slow internal osc = tremolo), Filter FM (audio-rate
+//     cutoff swing, +/-3 oct around Band Freq, Q knob sets resonance)
+//   ~ COMPATIBILITY: mode values 0-3 are frozen exactly as before; the
+//     new operations append. Saved projects load unchanged
+//   + scope shows the follower output in Envelope mode (the actual gain
+//     signal), not the raw modulator
+//   + fourth mode: Osc Ring Mod. The modes now form a clean 2x2 matrix -
+//     operation (Ring / FM) x modulator source (external / internal osc).
+//     Existing projects keep their mode: values 0-2 are unchanged
+//   + interaction scope: carrier band, active modulator, and result as
+//     three triggered traces, so you can SEE what the modulation is doing
+//   ~ FIX: the delay buffer is now written every sample in every mode
+//     (Ring mode used to freeze the write head; switching to FM replayed
+//     stale audio)
+//   + 5 ms parameter smoothing on Intensity, FM Depth, Band Freq/Q, and
+//     Output Trim - no zipper on sweeps, no clicks automating Intensity
+//   + NaN input guard (one bad sample used to poison the filter states
+//     permanently and circulate through the delay line)
+//   ~ display name updated (file name unchanged so saved projects load)
+// @about
+//   # Cross Modulator
+//   Modulates a selectable band of the carrier; everything outside the
+//   band passes through untouched. At Intensity 0 the output reconstructs
+//   the input exactly. Five operations x two modulator sources:
+//     Ring      - band x modulator (sidebands replace the carrier)
+//     Phase FM  - modulator bends the band's time base
+//     AM        - band x (1 + modulator): carrier stays, sidebands join
+//     Envelope  - a follower on the modulator gates the band: its rhythm
+//                 imposed with no pitch artifacts
+//     Filter FM - the modulator swings a resonant lowpass on the band at
+//                 audio rate, +/-3 octaves around Band Freq (Q = resonance)
+//
+//   ROUTING: carrier audio on channels 1/2 (e.g. your vocal), modulator on
+//   channels 3/4 (e.g. a sine from another track). Set the host track to
+//   4 channels and send the modulator track's 1/2 into 3/4. Or set
+//   Modulator Source to "Main In 1-2" for self-modulation. The osc modes
+//   need no routing at all.
+//
+//   KNOWN CHARACTER: in the FM modes the selected band is delayed by up to
+//   (Depth x Intensity) ms while the rest of the signal stays dry, so a
+//   little comb-filtering at the band edges is inherent to the design.
+//   Ring mod and FM of full-band audio also alias by nature - part of the
+//   sound, not a defect (and why there is no oversampling).
+
+slider1:mode=1<0,9,1{Ring x Ext,Phase FM x Ext,FM x Osc,Ring x Osc,AM x Ext,AM x Osc,Envelope x Ext,Envelope x Osc,Filter FM x Ext,Filter FM x Osc}>Mode
+slider2:intensity=50<0,100,0.1>Intensity (%)
+slider3:carrier_hz=220<20,5000,0.1>Osc Rate Hz (Osc modes)
+slider4:maxdelay_ms=2<0,20,0.01>Max FM Depth ms (FM modes)
+slider5:modsrc=0<0,1,1{Sidechain 3-4,Main In 1-2}>Modulator Source (ext modes)
+slider6:fmode=3<0,3,1{Lowpass,Bandpass,Highpass,Full Band}>Modulated Band
+slider7:fcut=1500<20,18000,1>Band Freq (Hz)
+slider8:fq=0.707<0.2,12,0.001>Band Q / Width
+slider9:out_db=0<-24,24,0.1>Output Trim (dB)
+
+in_pin:Carrier L
+in_pin:Carrier R
+in_pin:Modulator L
+in_pin:Modulator R
+out_pin:Out L
+out_pin:Out R
+
+@init
+bufsize = srate;
+bufL = 0;
+bufR = bufsize;
+wpos = 0;
+oscphase = 0;
+ic1L = ic2L = ic1R = ic2R = 0;
+ic1FL = ic2FL = ic1FR = ic2FR = 0;   // Filter-FM SVF states
+envf = 0;                             // Envelope-Transfer follower
+
+// scope ring buffers (written in @sample, read by @gfx; display-only)
+SC_N = 4096;
+SC_MASK = 4095;
+scope_sel = bufsize * 2;
+scope_mod = scope_sel + SC_N;
+scope_out = scope_mod + SC_N;
+spos = 0;
+
+memset(0, 0, bufsize * 2 + SC_N * 3);
+
+// 5 ms one-pole smoothing: gain and delay-length steps are clicks
+sm_k = 1 - exp(-1 / (0.005 * srate));
+envA = 1 - exp(-1 / (0.002 * srate));   // follower attack
+envR = 1 - exp(-1 / (0.060 * srate));   // follower release
+FFM_OCT = 2.08;                          // ln(8): +/-3 octaves of cutoff swing
+params_init = 0;
+
+@slider
+// targets; the smoothed copies chase them in @sample
+amt_t = intensity * 0.01;
+maxdelay_t = maxdelay_ms * 0.001 * srate;
+osc_inc = carrier_hz / srate;
+outgain_t = 10 ^ (out_db / 20);
+lcut_t = log(min(max(fcut, 20), srate * 0.49));   // smooth cut in log-Hz
+q_t = fq;
+
+// decode the combined mode into operation x source. Indexes 0-3 are the
+// historical modes and MUST keep their meaning (saved projects):
+//   0 Ring/Ext, 1 FM/Ext, 2 FM/Osc, 3 Ring/Osc, then 4.. append pairs.
+// op_id: 0 ring, 1 fm, 2 am, 3 env, 4 filter-fm
+op_id = mode < 0.5 ? 0 : mode < 1.5 ? 1 : mode < 2.5 ? 1 : mode < 3.5 ? 0
+      : mode < 4.5 ? 2 : mode < 5.5 ? 2 : mode < 6.5 ? 3 : mode < 7.5 ? 3 : 4;
+use_osc = (mode > 1.5 && mode < 3.5) || mode == 5 || mode == 7 || mode > 8.5;
+
+// first run: land on the targets instantly (no fade-in from zero)
+params_init == 0 ? (
+  amt_s = amt_t; maxdelay_s = maxdelay_t; outgain_s = outgain_t;
+  lcut_s = lcut_t; q_s = q_t;
+  params_init = 1;
+);
+
+@sample
+// NaN guard: one non-finite input would poison the SVF states permanently
+// and circulate through the delay line - sanitize at the door
+spl0 != spl0 ? spl0 = 0;
+spl1 != spl1 ? spl1 = 0;
+spl2 != spl2 ? spl2 = 0;
+spl3 != spl3 ? spl3 = 0;
+
+// parameter smoothing
+amt_s      += sm_k * (amt_t - amt_s);
+maxdelay_s += sm_k * (maxdelay_t - maxdelay_s);
+outgain_s  += sm_k * (outgain_t - outgain_s);
+lcut_s     += sm_k * (lcut_t - lcut_s);
+q_s        += sm_k * (q_t - q_s);
+
+// TPT SVF coefficients from the smoothed cut/Q (one tan per sample - cheap)
+g = tan($pi * exp(lcut_s) / srate);
+k = 1 / q_s;
+a1 = 1 / (1 + g * (g + k));
+a2 = g * a1;
+a3 = g * a2;
+
+modsrc < 0.5 ? ( m = (spl2 + spl3) * 0.5; ) : ( m = (spl0 + spl1) * 0.5; );
+
+// internal oscillator always runs -> phase-continuous mode switching
+oscv = sin(oscphase * 2 * $pi);
+oscphase += osc_inc;
+oscphase >= 1 ? oscphase -= 1;
+
+// ---- inline TPT state-variable filter, L ----
+v3 = spl0 - ic2L;
+v1 = a1 * ic1L + a2 * v3;
+v2 = ic2L + a2 * ic1L + a3 * v3;
+ic1L = 2 * v1 - ic1L;
+ic2L = 2 * v2 - ic2L;
+lpL = v2; bpL = v1; hpL = spl0 - k * v1 - v2;
+
+// ---- inline TPT state-variable filter, R ----
+v3 = spl1 - ic2R;
+v1 = a1 * ic1R + a2 * v3;
+v2 = ic2R + a2 * ic1R + a3 * v3;
+ic1R = 2 * v1 - ic1R;
+ic2R = 2 * v2 - ic2R;
+lpR = v2; bpR = v1; hpR = spl1 - k * v1 - v2;
+
+fmode < 0.5 ? ( selL = lpL;      selR = lpR;      ) :   // lows
+fmode < 1.5 ? ( selL = k * bpL;  selR = k * bpR;  ) :   // band
+fmode < 2.5 ? ( selL = hpL;      selR = hpR;      ) :   // highs
+              ( selL = spl0;     selR = spl1;     );    // full
+restL = spl0 - selL;
+restR = spl1 - selR;
+
+// ALWAYS write the delay buffer and advance the head, in every mode.
+// If only the FM branch wrote it, Ring mode would freeze the write head
+// and a later switch to FM would replay stale audio.
+bufL[wpos] = selL;
+bufR[wpos] = selR;
+
+mval = use_osc ? oscv : m;
+scope_mval = mval;   // what the scope's amber trace shows
+
+op_id == 0 ? (
+  // ---- Ring: band x modulator (sidebands replace the carrier) ----
+  pL = selL * (1 - amt_s) + selL * mval * amt_s;
+  pR = selR * (1 - amt_s) + selR * mval * amt_s;
+) : op_id == 1 ? (
+  // ---- FM: mval bends the band's time base ----
+  depth = maxdelay_s * amt_s;
+  dly = depth * (1 + mval);
+  dly < 0 ? dly = 0;
+  dly > bufsize - 2 ? dly = bufsize - 2;
+  rp = wpos - dly;
+  rp < 0 ? rp += bufsize;
+  i0 = rp | 0;
+  frac = rp - i0;
+  i1 = i0 + 1;
+  i1 >= bufsize ? i1 -= bufsize;
+  pL = bufL[i0] * (1 - frac) + bufL[i1] * frac;
+  pR = bufR[i0] * (1 - frac) + bufR[i1] * frac;
+) : op_id == 2 ? (
+  // ---- AM: carrier stays present, sidebands join it ----
+  pL = selL * (1 + amt_s * mval);
+  pR = selR * (1 + amt_s * mval);
+) : op_id == 3 ? (
+  // ---- Envelope Transfer: the modulator's rhythm gates the band ----
+  env_in = abs(mval);
+  env_in > envf ? envf += envA * (env_in - envf)
+                : envf += envR * (env_in - envf);
+  pL = selL * ((1 - amt_s) + amt_s * envf);
+  pR = selR * ((1 - amt_s) + amt_s * envf);
+  scope_mval = envf;   // show the actual gain signal, not the raw modulator
+) : (
+  // ---- Filter FM: audio-rate cutoff swing on the band ----
+  // cutoff = Band Freq * 2^(+/-3 oct * mval * intensity); Q = resonance.
+  // Crossfaded with the dry band so Intensity 0 reconstructs exactly.
+  fc2 = exp(lcut_s + mval * amt_s * FFM_OCT);
+  fc2 > srate * 0.49 ? fc2 = srate * 0.49;
+  fc2 < 10 ? fc2 = 10;
+  g2 = tan($pi * fc2 / srate);
+  b1 = 1 / (1 + g2 * (g2 + k));
+  b2 = g2 * b1;
+  b3 = g2 * b2;
+  v3 = selL - ic2FL;
+  v1 = b1 * ic1FL + b2 * v3;
+  v2 = ic2FL + b2 * ic1FL + b3 * v3;
+  ic1FL = 2 * v1 - ic1FL;
+  ic2FL = 2 * v2 - ic2FL;
+  pL = selL * (1 - amt_s) + v2 * amt_s;
+  v3 = selR - ic2FR;
+  v1 = b1 * ic1FR + b2 * v3;
+  v2 = ic2FR + b2 * ic1FR + b3 * v3;
+  ic1FR = 2 * v1 - ic1FR;
+  ic2FR = 2 * v2 - ic2FR;
+  pR = selR * (1 - amt_s) + v2 * amt_s;
+);
+
+wpos += 1;
+wpos >= bufsize ? wpos = 0;
+
+// feed the interaction scope (mono sums; read by @gfx)
+scope_sel[spos] = (selL + selR) * 0.5;
+scope_mod[spos] = scope_mval;
+scope_out[spos] = (pL + pR) * 0.5;
+spos = (spos + 1) & SC_MASK;
+
+spl0 = (restL + pL) * outgain_s;
+spl1 = (restR + pR) * outgain_s;
+
+// belt-and-suspenders output net
+spl0 != spl0 ? spl0 = 0;
+spl1 != spl1 ? spl1 = 0;
+
+@gfx 520 210
+// NOTE: @gfx runs on a separate thread and JSFX shares all variables.
+// Everything here uses sc_-prefixed names so the audio thread's variables
+// (m, g, k, v1, mval, i0...) are never touched. Scope buffers are display-
+// only reads; tearing is benign.
+
+sc_w = gfx_w; sc_h = gfx_h;
+gfx_set(0.10, 0.10, 0.12, 1);
+gfx_rect(0, 0, sc_w, sc_h);
+
+sc_x0 = 8; sc_y0 = 24;
+sc_gw = sc_w - 16;
+sc_gh = sc_h - 32;
+gfx_set(0.13, 0.13, 0.16, 1);
+gfx_rect(sc_x0, sc_y0, sc_gw, sc_gh);
+gfx_set(0.24, 0.24, 0.29, 1);
+gfx_line(sc_x0, sc_y0, sc_x0 + sc_gw - 1, sc_y0);
+gfx_line(sc_x0, sc_y0 + sc_gh - 1, sc_x0 + sc_gw - 1, sc_y0 + sc_gh - 1);
+gfx_line(sc_x0, sc_y0, sc_x0, sc_y0 + sc_gh - 1);
+gfx_line(sc_x0 + sc_gw - 1, sc_y0, sc_x0 + sc_gw - 1, sc_y0 + sc_gh - 1);
+
+sc_cy = sc_y0 + sc_gh * 0.5;
+sc_scale = sc_gh * 0.42;
+gfx_set(0.20, 0.20, 0.24, 1);
+gfx_line(sc_x0 + 1, sc_cy, sc_x0 + sc_gw - 2, sc_cy);
+
+// legend + mode label
+gfx_setfont(1, "Arial", 12);
+gfx_set(0.42, 0.78, 0.92, 1); gfx_x = sc_x0; gfx_y = 6; gfx_drawstr("CARRIER BAND");
+gfx_set(0.95, 0.70, 0.30, 1); gfx_x += 14; gfx_drawstr("MODULATOR");
+gfx_set(0.55, 0.90, 0.60, 1); gfx_x += 14; gfx_drawstr("RESULT");
+gfx_set(0.55, 0.55, 0.62, 1);
+sprintf(#sc_mode, "%s x %s",
+  op_id == 0 ? "RING" : op_id == 1 ? "FM" : op_id == 2 ? "AM"
+  : op_id == 3 ? "ENV" : "FILT-FM",
+  use_osc ? "OSC" : "EXT");
+gfx_measurestr(#sc_mode, sc_tw, sc_th);
+gfx_x = sc_x0 + sc_gw - sc_tw; gfx_y = 6;
+gfx_drawstr(#sc_mode);
+
+// window of samples to show, triggered on a modulator rising zero-cross
+// so periodic modulators (esp. the internal osc) hold still on screen
+sc_disp = 1024;
+sc_start = (spos - sc_disp - 8) & SC_MASK;
+sc_k = 0;
+sc_found = 0;
+while (sc_k < 900 && sc_found == 0) (
+  sc_j = (sc_start - sc_k) & SC_MASK;
+  sc_jp = (sc_j - 1) & SC_MASK;
+  (scope_mod[sc_jp] <= 0 && scope_mod[sc_j] > 0) ? (
+    sc_start = sc_j;
+    sc_found = 1;
+  );
+  sc_k += 1;
+);
+
+// three traces; result drawn last so it sits on top
+sc_pass = 0;
+loop(3,
+  sc_pass == 0 ? ( sc_buf = scope_mod; gfx_set(0.95, 0.70, 0.30, 0.85); )
+  : sc_pass == 1 ? ( sc_buf = scope_sel; gfx_set(0.42, 0.78, 0.92, 0.75); )
+  : ( sc_buf = scope_out; gfx_set(0.55, 0.90, 0.60, 1); );
+  sc_px = 0;
+  sc_prevy = sc_cy;
+  loop(sc_gw - 2,
+    sc_idx = (sc_start + ((sc_px * sc_disp) / (sc_gw - 2)) | 0) & SC_MASK;
+    sc_v = sc_buf[sc_idx];
+    sc_v > 1.2 ? sc_v = 1.2;
+    sc_v < -1.2 ? sc_v = -1.2;
+    sc_y = sc_cy - sc_v * sc_scale;
+    sc_px > 0 ? gfx_line(sc_x0 + sc_px, sc_prevy, sc_x0 + 1 + sc_px, sc_y);
+    sc_prevy = sc_y;
+    sc_px += 1;
+  );
+  sc_pass += 1;
+);

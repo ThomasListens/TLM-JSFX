@@ -1,0 +1,304 @@
+desc:Cochlear Stereocilia Distortion
+tags: distortion saturation biological cochlear
+author: Thomas
+version: 1.0
+// Based on Peterson & Heil 2020, MET Boltzmann model
+
+/*
+  Cochlear Stereocilia Distortion
+  ================================
+  A saturation plugin inspired by the mechanoelectrical transduction (MET)
+  of inner hair cell stereocilia in the mammalian cochlea.
+  
+  The Boltzmann function models how stereocilia bundle displacement
+  opens ion channels with an asymmetric, level-dependent response.
+  
+  Key biological features modeled:
+  - Asymmetric saturation (stereocilia bend more easily toward tall edge)
+  - Level-dependent compression (gain collapse at high SPL)
+  - Soft knee saturation (not hard clipping)
+  
+  References:
+  - Peterson & Heil (2020) Phase locking of auditory nerve fibers
+  - Nam & Guinan (2022) Calcium-dependent MET adaptation
+  - Cooper & Rhode (1997) Mechanical responses to high levels
+*/
+
+slider1:0<-12,24,0.1>Input Gain (dB)
+slider2:0<0,100,1>Drive (%)
+slider3:0<0,100,1>Asymmetry (%)
+slider4:0<-12,12,0.1>Output Trim (dB)
+slider5:100<0,100,1>Wet/Dry (%)
+
+in_pin:left input
+in_pin:right input
+out_pin:left output
+out_pin:right output
+
+@init
+// Constants
+log10_20 = 0.11512925464970228; // log(10)/20 for dB conversion
+
+// DC blocker state - very gentle, no clicks
+dc_x1_L = 0;
+dc_y1_L = 0;
+dc_x1_R = 0;
+dc_y1_R = 0;
+dc_coeff = 0.9995; // Very high = very gentle HP, ~3 Hz
+
+// Smoothing for parameters to avoid clicks
+smooth_drive = 0;
+smooth_asym = 0;
+
+// === CORE FUNCTIONS ===
+
+function tanh_approx(x)
+local(x2, a)
+(
+  // Fast tanh approximation - accurate and smooth
+  a = abs(x);
+  a >= 4 ? (
+    sign(x);
+  ) : (
+    x2 = x * x;
+    x * (27 + x2) / (27 + 9 * x2);
+  );
+);
+
+function soft_clip(x, threshold)
+local(ax, sgn)
+(
+  ax = abs(x);
+  sgn = sign(x);
+  ax <= threshold ? (
+    x;
+  ) : (
+    sgn * (threshold + tanh_approx((ax - threshold) * 2) * (1 - threshold));
+  );
+);
+
+/*
+  MET Boltzmann Transduction Function
+  ====================================
+  At Drive=0: completely linear (bypass)
+  As Drive increases: more saturation, more asymmetry effect
+*/
+function boltzmann_met(x, drive_amt, asym_amt)
+local(x_scaled, pos_scale, neg_scale, saturated, blended)
+(
+  // At drive=0, return input unchanged
+  drive_amt < 0.001 ? (
+    x;
+  ) : (
+    // Scale input into saturation range
+    // More drive = push harder into nonlinearity
+    x_scaled = x * (1 + drive_amt * 4);
+    
+    // Asymmetry: positive vs negative scaling
+    // Only applies when asymmetry > 0
+    pos_scale = 1 + asym_amt * 0.6;
+    neg_scale = 1 - asym_amt * 0.4;
+    
+    x_scaled = (x_scaled >= 0) ? 
+      x_scaled * pos_scale : 
+      x_scaled * neg_scale;
+    
+    // Soft saturation using tanh
+    // The /2 and *2 keep output roughly unity gain
+    saturated = tanh_approx(x_scaled / 2) * 2;
+    
+    // Blend between dry and saturated based on drive
+    // At low drive: mostly dry
+    // At high drive: mostly saturated
+    blended = x * (1 - drive_amt) + saturated * drive_amt;
+    
+    // Compensate for level increase from saturation
+    blended * (1 / (1 + drive_amt * 0.5));
+  );
+);
+
+// DC blocker - very gentle highpass
+function dc_block(x)
+instance(x1, y1)
+local(y)
+(
+  y = x - x1 + dc_coeff * y1;
+  x1 = x;
+  y1 = y;
+  y;
+);
+
+@slider
+// Convert dB to linear gain
+input_gain = exp(log10_20 * slider1);
+target_drive = slider2 / 100; // 0-1 range
+target_asym = slider3 / 100;  // 0-1 range
+output_gain = exp(log10_20 * slider4);
+wet = slider5 / 100;
+dry = 1 - wet;
+
+@sample
+// Smooth parameters to avoid clicks when adjusting
+smooth_drive = smooth_drive + (target_drive - smooth_drive) * 0.001;
+smooth_asym = smooth_asym + (target_asym - smooth_asym) * 0.001;
+
+// Store dry signal (pre-input gain for true dry)
+dry_L = spl0;
+dry_R = spl1;
+
+// Apply input gain
+in_L = spl0 * input_gain;
+in_R = spl1 * input_gain;
+
+// Apply cochlear distortion
+wet_L = boltzmann_met(in_L, smooth_drive, smooth_asym);
+wet_R = boltzmann_met(in_R, smooth_drive, smooth_asym);
+
+// DC blocking (only if there's asymmetry creating DC offset)
+smooth_asym > 0.01 ? (
+  wet_L = dc_x1_L.dc_block(wet_L);
+  wet_R = dc_x1_R.dc_block(wet_R);
+);
+
+// Soft output limiting to prevent overs
+wet_L = soft_clip(wet_L, 0.95);
+wet_R = soft_clip(wet_R, 0.95);
+
+// Wet/dry mix
+out_L = wet_L * wet + dry_L * dry;
+out_R = wet_R * wet + dry_R * dry;
+
+// Output trim
+spl0 = out_L * output_gain;
+spl1 = out_R * output_gain;
+
+@gfx 450 220
+// Background
+gfx_set(0.04, 0.04, 0.07, 1);
+gfx_rect(0, 0, gfx_w, gfx_h);
+
+// Draw border
+gfx_set(0.2, 0.2, 0.25, 1);
+gfx_rect(0, 0, gfx_w, 1);
+gfx_rect(0, gfx_h-1, gfx_w, 1);
+gfx_rect(0, 0, 1, gfx_h);
+gfx_rect(gfx_w-1, 0, 1, gfx_h);
+
+// Graph area
+graph_x = 50;
+graph_y = 45;
+graph_w = gfx_w - 100;
+graph_h = gfx_h - 90;
+
+// Draw graph background
+gfx_set(0.08, 0.08, 0.12, 1);
+gfx_rect(graph_x, graph_y, graph_w, graph_h);
+
+// Draw grid
+gfx_set(0.15, 0.15, 0.2, 1);
+// Vertical center
+gfx_line(graph_x + graph_w/2, graph_y, graph_x + graph_w/2, graph_y + graph_h);
+// Horizontal center
+gfx_line(graph_x, graph_y + graph_h/2, graph_x + graph_w, graph_y + graph_h/2);
+// Quarter lines
+gfx_set(0.1, 0.1, 0.15, 1);
+gfx_line(graph_x + graph_w/4, graph_y, graph_x + graph_w/4, graph_y + graph_h);
+gfx_line(graph_x + graph_w*3/4, graph_y, graph_x + graph_w*3/4, graph_y + graph_h);
+gfx_line(graph_x, graph_y + graph_h/4, graph_x + graph_w, graph_y + graph_h/4);
+gfx_line(graph_x, graph_y + graph_h*3/4, graph_x + graph_w, graph_y + graph_h*3/4);
+
+// Draw linear reference (diagonal)
+gfx_set(0.3, 0.3, 0.35, 0.5);
+gfx_line(graph_x, graph_y + graph_h, graph_x + graph_w, graph_y);
+
+// Draw transfer function curve
+gfx_set(0.3, 0.85, 0.9, 1);
+prev_px = -1;
+prev_py = -1;
+
+i = 0;
+loop(graph_w,
+  // Map pixel to input range [-1, 1]
+  in_val = (i / graph_w) * 2 - 1;
+  
+  // Apply distortion with current settings
+  out_val = boltzmann_met(in_val, smooth_drive, smooth_asym);
+  
+  // Clamp output for display
+  out_val = max(-1, min(1, out_val));
+  
+  // Map to pixel coordinates
+  px = graph_x + i;
+  py = graph_y + graph_h/2 - out_val * graph_h/2;
+  
+  (prev_px >= 0) ? (
+    gfx_line(prev_px, prev_py, px, py);
+  );
+  
+  prev_px = px;
+  prev_py = py;
+  
+  i += 1;
+);
+
+// Title
+gfx_set(0.9, 0.9, 0.9, 1);
+gfx_x = 10;
+gfx_y = 8;
+gfx_setfont(1, "Arial", 16);
+gfx_drawstr("Cochlear Stereocilia Distortion");
+
+// Subtitle
+gfx_set(0.5, 0.7, 0.75, 1);
+gfx_x = 10;
+gfx_y = 26;
+gfx_setfont(1, "Arial", 11);
+gfx_drawstr("MET Boltzmann Transduction Model");
+
+// Axis labels
+gfx_set(0.5, 0.5, 0.55, 1);
+gfx_setfont(1, "Arial", 10);
+gfx_x = graph_x - 25;
+gfx_y = graph_y + graph_h/2 - 5;
+gfx_drawstr("0");
+gfx_x = graph_x + graph_w/2 - 5;
+gfx_y = graph_y + graph_h + 5;
+gfx_drawstr("0");
+gfx_x = graph_x - 10;
+gfx_y = graph_y;
+gfx_drawstr("+");
+gfx_x = graph_x - 10;
+gfx_y = graph_y + graph_h - 10;
+gfx_drawstr("-");
+
+// Parameter display
+gfx_set(0.7, 0.7, 0.7, 1);
+gfx_setfont(1, "Arial", 11);
+gfx_x = graph_x;
+gfx_y = gfx_h - 35;
+gfx_drawstr("Drive: ");
+gfx_drawnumber(slider2, 0);
+gfx_drawstr("%");
+
+gfx_x = graph_x + 100;
+gfx_drawstr("   Asymmetry: ");
+gfx_drawnumber(slider3, 0);
+gfx_drawstr("%");
+
+gfx_x = graph_x + 230;
+gfx_drawstr("   Wet: ");
+gfx_drawnumber(slider5, 0);
+gfx_drawstr("%");
+
+// Status indicator
+smooth_drive < 0.01 ? (
+  gfx_set(0.4, 0.8, 0.4, 1);
+  gfx_x = gfx_w - 80;
+  gfx_y = 10;
+  gfx_drawstr("BYPASS");
+) : (
+  gfx_set(0.9, 0.6, 0.3, 1);
+  gfx_x = gfx_w - 80;
+  gfx_y = 10;
+  gfx_drawstr("ACTIVE");
+);
