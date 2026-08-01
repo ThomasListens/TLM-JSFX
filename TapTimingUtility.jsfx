@@ -1,5 +1,5 @@
-desc: Tap Timing Utility (TLM)
-author: Thomas & Claude
+desc:Tap Timing Utility (TLM)
+author:Thomas LeRoy Meier
 version: 2.2
 
 slider1:120<60,200,1>Current BPM

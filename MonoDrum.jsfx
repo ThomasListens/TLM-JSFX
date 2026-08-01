@@ -1,6 +1,8 @@
-desc:MonoDrum - Just Intonation Drum Synth
-author: thomas meier
+desc:MonoDrum (TLM)
+tags: drum synth percussion just intonation tuning MIDI instrument
+author:Thomas LeRoy Meier
 version: 1.11
+// Monophonic just-intonation drum synth
 // @changelog
 //   + five MATHEMATICAL STRUCTURE presets, where the tuning IS the patch:
 //     Spiral of Fifths (12 Pythagorean steps, pure 3-limit - every stem

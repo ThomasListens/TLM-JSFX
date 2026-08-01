@@ -1,7 +1,8 @@
-desc:Cochlear Stereocilia Distortion
-tags: distortion saturation biological cochlear
-author: Thomas
+desc:Cat Ears (TLM)
+tags: distortion saturation biological cochlear stereocilia
+author:Thomas LeRoy Meier
 version: 1.0
+// Cochlear stereocilia distortion.
 // Based on Peterson & Heil 2020, MET Boltzmann model
 
 /*

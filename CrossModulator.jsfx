@@ -1,6 +1,8 @@
-desc:Cross Modulator (Ring / FM / AM / Env / Filter-FM + Band Select)
-author: thomas meier
+desc:Cross Modulator (TLM)
+tags: ring modulation FM AM envelope filter cross modulator
+author:Thomas LeRoy Meier
 version: 4.3
+// Ring / Phase FM / AM / Envelope Transfer / Filter FM, with band select
 // @changelog
 //   + three new operations, each with ext or osc modulator: AM (carrier
 //     stays present alongside the sidebands), Envelope Transfer (2ms/60ms

@@ -1,5 +1,5 @@
 desc:Seed Delay (TLM)
-author:Thomas & Claude
+author:Thomas LeRoy Meier
 version: 7.4
 
 slider1:1<1,12,1>-Delay Choice (Legacy)
