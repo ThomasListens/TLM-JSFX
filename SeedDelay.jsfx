@@ -1,11 +1,11 @@
 desc:Seed Delay (TLM)
 author:Thomas & Claude
-version: 7.3
+version: 7.4
 
 slider1:1<1,12,1>-Delay Choice (Legacy)
 slider2:0<0,1,1>Regenerate
 slider3:0.3<0,1,0.01>Mix
-slider4:0.3<0,1,0.01>Feedback
+slider4:0.3<0,0.99,0.01>Feedback
 slider5:0<0,500,1>Min Delay (ms)
 slider6:1000<50,3000,1>Max Delay (ms)
 slider7:0<0,4,1{Free,1/4 Note,1/2 Note,1/1 Note,2/1 Note}>Timing
@@ -371,7 +371,12 @@ loop(8,
 slider5 = max(0, min(2000, slider5));
 slider6 = max(slider5 + 10, min(5000, slider6));
 slider3 = max(0, min(1, slider3));
-slider4 = max(0, min(1, slider4));
+// Ceiling is 0.99, matching the slider range. Exactly unity feedback is
+// marginal stability: the loop neither decays nor settles, and with taps
+// summing coherently at DC it grows without bound. Saike, Geraint Luff and
+// Tukan all cap below unity for this reason. A project saved at 1.0 by an
+// earlier version loads clamped to 0.99.
+slider4 = max(0, min(0.99, slider4));
 slider10 = max(0, min(1, slider10));
 slider11 = max(-1, min(1, slider11));
 // slider8 indexes algo_storage directly in get_base_value; an out-of-range
