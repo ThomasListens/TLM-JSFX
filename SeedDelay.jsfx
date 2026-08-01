@@ -1,6 +1,6 @@
 desc:Seed Delay (TLM)
 author:Thomas & Claude
-version: 7.2
+version: 7.3
 
 slider1:1<1,12,1>-Delay Choice (Legacy)
 slider2:0<0,1,1>Regenerate
@@ -75,6 +75,13 @@ feedback_smooth = slider4;
 warmth_smooth = slider10;
 ceiling_smooth = slider11;
 
+// Feedback damping filter state. These previously lived at the bottom of
+// @sample, which re-zeroed them every sample and collapsed the one-pole
+// lowpass at ~line 522 into a flat gain trim. Initializing them here is what
+// actually enables the HF damping.
+fb_L_prev = 0;
+fb_R_prev = 0;
+
 // Mouse state
 last_mouse_cap = 0;
 dragging_volume = 0;
@@ -138,7 +145,12 @@ local(addr, val)
   ) : 0.5
 );
 
-function set_algo_value(algo, slot, val) (
+// local(addr): this is reached from @gfx (the REGEN button and algorithm
+// switching both call generate_algorithm_values), so an unlocalized addr is a
+// global written from the graphics thread. get_base_value already localizes
+// its own addr, so nothing on the audio thread reads this one today - but that
+// is the only reason it is currently harmless.
+function set_algo_value(algo, slot, val) local(addr) (
   slot >= 0 && slot < MAX_TAPS && algo >= 0 && algo < 8 ? (
     addr = algo_storage + algo * MAX_TAPS + slot;
     addr[0] = max(0, min(1, val));
@@ -362,6 +374,13 @@ slider3 = max(0, min(1, slider3));
 slider4 = max(0, min(1, slider4));
 slider10 = max(0, min(1, slider10));
 slider11 = max(-1, min(1, slider11));
+// slider8 indexes algo_storage directly in get_base_value; an out-of-range
+// value from host automation or a corrupt project would read outside the
+// table (negative reads land in delay_buffer_L and would be used as delay
+// times). slider7/9 are read as flags but clamped here for the same reason.
+slider7 = max(0, min(4, floor(slider7)));
+slider8 = max(0, min(7, floor(slider8)));
+slider9 = max(0, min(1, floor(slider9)));
 
 // Re-roll
 slider2 > 0.5 && last_reroll_state <= 0.5 ? (
@@ -553,9 +572,31 @@ feedback_amount > 0.8 ? (
   fb_R = fb_R + harmonic2_R + subharmonic_R;
 );
 
-// Write to delay buffer
-delay_buffer_L[write_pos] = input_L + fb_L;
-delay_buffer_R[write_pos] = input_R + fb_R;
+// Write to delay buffer.
+// FEEDBACK_LIMIT bounds the loop itself, not just the output. The limiter at
+// the bottom of this block runs after this write, so it can never stop the
+// buffer from growing. Taps sum coherently at DC (there is no DC blocker in
+// the feedback path), so a linear path - Dirt and Light both at 0 - can build
+// until the buffer holds inf. From there any tap at zero volume computes
+// inf*0 = NaN, and NaN passes the limiter's abs() test unchanged.
+// Soft knee only above FEEDBACK_LIMIT, so levels within normal range are
+// bit-identical to before: this cannot alter how existing projects sound.
+fb_in_L = input_L + fb_L;
+fb_in_R = input_R + fb_R;
+abs(fb_in_L) > FEEDBACK_LIMIT ? (
+  fb_in_L = sign(fb_in_L) * (FEEDBACK_LIMIT + tanh((abs(fb_in_L) - FEEDBACK_LIMIT) * 2) * 0.25);
+);
+abs(fb_in_R) > FEEDBACK_LIMIT ? (
+  fb_in_R = sign(fb_in_R) * (FEEDBACK_LIMIT + tanh((abs(fb_in_R) - FEEDBACK_LIMIT) * 2) * 0.25);
+);
+// Trap non-finite values before they enter the buffer, where they would
+// persist until the FX is reloaded. abs(NaN) > x is false, so the test above
+// cannot catch this case.
+fb_in_L != fb_in_L ? fb_in_L = 0;
+fb_in_R != fb_in_R ? fb_in_R = 0;
+
+delay_buffer_L[write_pos] = fb_in_L;
+delay_buffer_R[write_pos] = fb_in_R;
 
 write_pos = (write_pos + 1) & (BUFFER_SIZE - 1);
 
@@ -577,12 +618,14 @@ abs(output_R) > limiter_threshold ? (
     tanh(2 * (abs(output_R) - limiter_threshold)) * 0.05);
 );
 
+// Final NaN guard. The limiter above uses abs(x) > threshold, which is false
+// for NaN, so a NaN reaches here unmodified and would be written to the host
+// channel and recirculated into the delay buffer.
+output_L != output_L ? output_L = 0;
+output_R != output_R ? output_R = 0;
+
 spl0 = output_L;
 spl1 = output_R;
-
-// Initialize feedback damping state
-fb_L_prev = 0;
-fb_R_prev = 0;
 
 @gfx 450 415
 
@@ -932,4 +975,34 @@ i = 0;
 loop(8 * MAX_TAPS,
   file_var(0, algo_storage[i]);
   i += 1;
+);
+
+// Load-only sanitizing. file_avail(0) is negative while writing.
+// Nothing above validates what comes back in, and tap_volumes feeds the
+// feedback path directly, so a truncated or hand-edited state chunk could
+// start a project already running away. NaN checks use the x != x idiom
+// because comparisons against NaN are always false.
+// No fields are added here - the layout must stay byte-compatible with
+// every project saved by a released version.
+file_avail(0) >= 0 ? (
+  i = 0;
+  loop(MAX_TAPS,
+    (tap_selected[i] != tap_selected[i]) ? tap_selected[i] = 0;
+    tap_selected[i] = tap_selected[i] ? 1 : 0;
+    (tap_volumes[i] != tap_volumes[i]) ? tap_volumes[i] = 0.5;
+    tap_volumes[i] = max(0, min(1, tap_volumes[i]));
+    (tap_pans[i] != tap_pans[i]) ? tap_pans[i] = 0;
+    tap_pans[i] = max(-1, min(1, tap_pans[i]));
+    i += 1;
+  );
+  i = 0;
+  loop(8 * MAX_TAPS,
+    (algo_storage[i] != algo_storage[i]) ? algo_storage[i] = 0.5;
+    algo_storage[i] = max(0, min(1, algo_storage[i]));
+    i += 1;
+  );
+  (generation_count != generation_count || generation_count < 0) ? generation_count = 0;
+  // Reseed the smoothers so the restored volumes do not ramp from stale values
+  i = 0;
+  loop(MAX_TAPS, tap_volumes_smooth[i] = tap_volumes[i]; i += 1;);
 );
