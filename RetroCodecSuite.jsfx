@@ -1,6 +1,6 @@
 desc:Retro Codec Suite (TLM)
 tags:n64 psx vadpcm adpcm nintendo playstation retro compression apple 1bit
-version:8.3
+version:8.4
 author:Thomas
 
 // HIDDEN SLIDERS
@@ -17,7 +17,15 @@ slider9:aa_filter=0<0,1,1>-Anti-Aliasing Filter
 @init
 
 // Sample rate presets
-sample_rates = 1000;
+// NOTE: this base was 1000, which is also ima_index_table's base (see below).
+// init_tables() runs after these writes so the table started out correct, but
+// @slider's "sample_rates[6] = srate" then wrote 44100 over ima_index_table[6]
+// on every parameter change, including the first one at load. Any nibble of
+// magnitude 6 added 44100 to step_idx, pinning it at the max-step clamp of 88
+// and locking IMA ADPCM into permanent maximum-step distortion.
+// This table and bit_depths below are never read - nothing dereferences them
+// anywhere in the file - so they are kept only to avoid disturbing the layout.
+sample_rates = 1200;
 sample_rates[0] = 8000;
 sample_rates[1] = 11025;
 sample_rates[2] = 16000;
@@ -85,28 +93,35 @@ SLIDER_WIDTH = 320;
 DROPDOWN_HEIGHT = 32;
 DROPDOWN_WIDTH = 280;
 
-// DSP Memory allocation - INITIALIZE ALL TO ZERO
+// DSP state.
+// These were previously assigned 0,1,2,...,25 and paired with memset(0,0,100),
+// which reads as address allocation - but every one of these names is used as
+// a plain scalar throughout the file (e.g. "lpf_a0_L = lpf_a0_L * coef + ..."),
+// never dereferenced. So the memset zeroed addresses nothing reads, and the
+// DSP state itself booted to those literal index values: lpf_a0_R = 13 meant
+// the lo-fi filter started with a +13.0 impulse, psx_s1_L/s2_L = 6/7 railed the
+// PSX feedback path, and predictor_R = 1 started at full scale.
+// reset_filter_states() zeroes all of it correctly, but it is only called on
+// transport start, so live monitoring without pressing play never cleared this.
+// It is now called at the end of @init - see the call below init_tables().
 predictor_L = 0;
-predictor_R = 1;
-step_index_L = 2;
-step_index_R = 3;
-predictor_L2 = 4;
-predictor_R2 = 5;
-psx_s1_L = 6;
-psx_s2_L = 7;
-psx_s1_R = 8;
-psx_s2_R = 9;
-lpf_a0_L = 10;
-lpf_a0_R = 13;
-aa_lpf_L = 20;
-aa_lpf_R = 21;
-onebit_delta_L = 22;
-onebit_delta_R = 23;
-onebit_dc_L = 24;  // DC blocker state for 1-bit
-onebit_dc_R = 25;
-
-// Initialize all DSP memory to zero
-memset(0, 0, 100);
+predictor_R = 0;
+step_index_L = 0;
+step_index_R = 0;
+predictor_L2 = 0;
+predictor_R2 = 0;
+psx_s1_L = 0;
+psx_s2_L = 0;
+psx_s1_R = 0;
+psx_s2_R = 0;
+lpf_a0_L = 0;
+lpf_a0_R = 0;
+aa_lpf_L = 0;
+aa_lpf_R = 0;
+onebit_delta_L = 0;
+onebit_delta_R = 0;
+onebit_dc_L = 0;  // DC blocker state for 1-bit
+onebit_dc_R = 0;
 
 // Tables memory allocation
 vadpcm_table = 800;
@@ -863,6 +878,11 @@ local(best_dist, best_val, i, notch_val, dist, notch_hz)
   best_val;
 );
 
+// Clear all DSP state at load. Previously this only ran on transport start
+// (see @block), so a live-monitored or record-armed track heard whatever the
+// filter and predictor states booted to.
+reset_filter_states();
+
 @slider
 gui_sample_rate = sample_rate_idx / 4;
 gui_bit_depth = bit_depth_idx / 3;
@@ -920,7 +940,7 @@ gfx_drawstr(" SUITE");
 gfx_set(FG_COLOR * 0.3, FG_COLOR * 0.3, FG_COLOR * 0.35);
 gfx_setfont(1, "Arial", 9);
 gfx_x = MARGIN + 180; gfx_y = 27;
-gfx_drawstr("v8.3");
+gfx_drawstr("v8.4");
 
 // Codec dropdown label
 dropdown_y = 60;
