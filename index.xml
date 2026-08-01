@@ -56,7 +56,7 @@
 <changelog><![CDATA[Interface and control refinements.]]></changelog>
 </version>
 <version name="8.4" author="Thomas LeRoy Meier" time="2026-08-01T03:41:30Z">
-<source>https://raw.githubusercontent.com/ThomasListens/TLM-JSFX/9cc48281aa7dd6b4160e560edc94ef7648e46e67/RetroCodecSuite.jsfx</source>
+<source>https://raw.githubusercontent.com/ThomasListens/TLM-JSFX/4015acbe6e93567a8fd328a4581a6635bf206628/RetroCodecSuite.jsfx</source>
 <changelog><![CDATA[Two long-standing bugs, both present since the first release.
 
 The IMA ADPCM codec never worked. Its index table shared a base address with the sample rate table, so changing any parameter overwrote part of it and pinned the decoder at its maximum step size. IMA has been producing permanent maximum-step distortion rather than IMA compression. It now decodes correctly, so this codec will sound substantially different - and correct - for the first time.
@@ -118,7 +118,7 @@ The Algorithm, Timing and Invert parameters are now range-checked. Out-of-range 
 Saved plugin state is now checked when a project loads. The state format is unchanged, so existing projects load exactly as before.]]></changelog>
 </version>
 <version name="7.4" author="Thomas LeRoy Meier" time="2026-08-01T03:43:06Z">
-<source>https://raw.githubusercontent.com/ThomasListens/TLM-JSFX/2807f8249256cad860c817b2822ec6fc8b641be4/SeedDelay.jsfx</source>
+<source>https://raw.githubusercontent.com/ThomasListens/TLM-JSFX/4015acbe6e93567a8fd328a4581a6635bf206628/SeedDelay.jsfx</source>
 <changelog><![CDATA[Feedback now tops out at 0.99 instead of 1.0. Exactly unity feedback is the condition that made the buildup in 7.3 possible. The 60%, 80% and 90% character thresholds are all still reachable, so the sound at high feedback is unchanged.
 
 A project saved with feedback at 1.0 will load at 0.99.]]></changelog>
@@ -156,21 +156,21 @@ A project saved with feedback at 1.0 will load at 0.99.]]></changelog>
 </description>
 </metadata>
 <version name="4.3" author="Thomas LeRoy Meier" time="2026-08-01T03:43:33Z">
-<source>https://raw.githubusercontent.com/ThomasListens/TLM-JSFX/adfa44dd23defca5286743cf43648bf385c35f91/CrossModulator.jsfx</source>
+<source>https://raw.githubusercontent.com/ThomasListens/TLM-JSFX/4015acbe6e93567a8fd328a4581a6635bf206628/CrossModulator.jsfx</source>
 <changelog><![CDATA[First release through ReaPack.
 
 Adds AM, Envelope Transfer and Filter FM, each with an external or internal-oscillator modulator, plus band selection so modulation can be restricted to part of the spectrum.]]></changelog>
 </version>
 </reapack>
 
-<reapack name="Cochlear Stereocilia Distortion (TLM)" type="effect" desc="Saturation modelled on inner ear hair cell transduction">
+<reapack name="Cat Ears (TLM)" type="effect" desc="Saturation modelled on inner ear hair cell transduction">
 <metadata>
 <description>
 <![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}}
 \widowctrl\hyphauto
 
-{\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel0 \b \fs36 Cochlear Stereocilia Distortion\par}
-{\pard \ql \f0 \sa180 \li0 \fi0 A saturation curve taken from the mechanoelectrical transduction of stereocilia in the inner ear, rather than from a circuit.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel0 \b \fs36 Cat Ears\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Cochlear stereocilia distortion. A saturation curve taken from the mechanoelectrical transduction of stereocilia in the inner ear, rather than from a circuit.\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 The Boltzmann function used here describes how far a hair bundle has to bend before its ion channels open. The curve is asymmetric and its shape depends on level, so it behaves differently on transients than on sustained material. Based on the model in Peterson & Heil, 2020.\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 \b \fs28 Controls\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Input Gain - how hard the curve is driven\par}
@@ -183,7 +183,7 @@ Adds AM, Envelope Transfer and Filter FM, each with an external or internal-osci
 </description>
 </metadata>
 <version name="1.0" author="Thomas LeRoy Meier" time="2026-08-01T03:57:42Z">
-<source>https://raw.githubusercontent.com/ThomasListens/TLM-JSFX/71594bf316bfb68c8e8988666d59dbfabf943319/Cat%20Ears.jsfx</source>
+<source>https://raw.githubusercontent.com/ThomasListens/TLM-JSFX/4015acbe6e93567a8fd328a4581a6635bf206628/CatEars.jsfx</source>
 <changelog><![CDATA[First release.]]></changelog>
 </version>
 </reapack>
@@ -213,7 +213,7 @@ Adds AM, Envelope Transfer and Filter FM, each with an external or internal-osci
 </description>
 </metadata>
 <version name="1.11" author="Thomas LeRoy Meier" time="2026-08-01T03:43:33Z">
-<source>https://raw.githubusercontent.com/ThomasListens/TLM-JSFX/adfa44dd23defca5286743cf43648bf385c35f91/MonoDrum.jsfx</source>
+<source>https://raw.githubusercontent.com/ThomasListens/TLM-JSFX/4015acbe6e93567a8fd328a4581a6635bf206628/MonoDrum.jsfx</source>
 <changelog><![CDATA[First release through ReaPack.
 
 Adds five mathematical structure presets where the tuning is the patch: Spiral of Fifths, Euler Genus 105, Otonal Nine, Superparticular and a Fibonacci set.]]></changelog>
@@ -248,7 +248,7 @@ Adds five mathematical structure presets where the tuning is the patch: Spiral o
 <changelog><![CDATA[First public version.]]></changelog>
 </version>
 <version name="2.2" author="Thomas LeRoy Meier" time="2026-08-01T03:43:14Z">
-<source>https://raw.githubusercontent.com/ThomasListens/TLM-JSFX/850a2f227242a1fbd7babe5cd02fe849041a53b1/TapTimingUtility.jsfx</source>
+<source>https://raw.githubusercontent.com/ThomasListens/TLM-JSFX/4015acbe6e93567a8fd328a4581a6635bf206628/TapTimingUtility.jsfx</source>
 <changelog><![CDATA[Removed a packaging declaration that referred to a file which was never part of the repository. No change to the plugin itself.]]></changelog>
 </version>
 </reapack>

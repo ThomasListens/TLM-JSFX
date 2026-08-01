@@ -118,9 +118,9 @@ Real drums have inharmonic partials. Placing them at just ratios instead gives s
 
 ---
 
-## Cochlear Stereocilia Distortion
+## Cat Ears
 
-A saturation curve taken from the inner ear rather than from a circuit.
+Cochlear stereocilia distortion — a saturation curve taken from the inner ear rather than from a circuit.
 
 The Boltzmann function used here describes how far a hair bundle has to bend before its ion channels open. The curve is asymmetric and level-dependent, so it behaves differently on transients than on sustained material. Based on the model in Peterson & Heil, 2020.
 
@@ -156,6 +156,6 @@ Provided as-is for creative use.
 
 ## Credits
 
-Written by Thomas Meier with AI assistance from Claude. Seed Delay and Tap Timing Utility carry a joint author tag for that reason.
+Written by Thomas LeRoy Meier, with AI assistance from Claude. Where that assistance produced a specific change, it is recorded in the commit history rather than summarised here.
 
 Approach to memory layout, filter topology and packaging is indebted to reading the published work of [Joep Vanlier (Saike)](https://github.com/JoepVanlier/JSFX), [Geraint Luff](https://github.com/geraintluff/jsfx) and [chokehold](https://github.com/chkhld/jsfx).
