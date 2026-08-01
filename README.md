@@ -4,6 +4,8 @@ JSFX effects and instruments for REAPER, by Thomas LeRoy Meier.
 
 Six plugins: a game-console codec emulator, a 12-tap delay with generated tap times, a cross modulator, a just-intonation drum synth, a saturator modelled on the inner ear, and a tap tempo readout.
 
+**Three of them are not in ReaPack yet.** Cross Modulator, MonoDrum and Cat Ears are in this repository and documented below, but they are not being distributed for install until they have been properly tested. Download them by hand if you want to try them early.
+
 ## Install
 
 **ReaPack** (recommended — you get updates)
@@ -81,6 +83,8 @@ A 12-tap delay where the tap times are generated rather than dialled in. An algo
 
 ## Cross Modulator
 
+> Not in ReaPack yet — manual install only.
+
 Five ways for one signal to modulate another, each available with an external modulator or an internal oscillator. Modulation can be applied to the whole signal or restricted to one frequency band.
 
 **Routing — read this first.** Four inputs. Carrier on channels 1–2, modulator on channels 3–4.
@@ -106,6 +110,8 @@ Controls: Intensity · Osc Rate (20 Hz–5 kHz) · Max FM Depth · Modulated Ban
 
 ## MonoDrum
 
+> Not in ReaPack yet — manual install only.
+
 A monophonic percussion synth whose partials are placed by whole-number frequency ratios rather than by an inharmonicity control. MIDI in, no audio in — put it on an empty track.
 
 Real drums have inharmonic partials. Placing them at just ratios instead gives something that reads as pitched percussion. That is the point, not a limitation.
@@ -119,6 +125,8 @@ Real drums have inharmonic partials. Placing them at just ratios instead gives s
 ---
 
 ## Cat Ears
+
+> Not in ReaPack yet — manual install only.
 
 Cochlear stereocilia distortion — a saturation curve taken from the inner ear rather than from a circuit.
 
