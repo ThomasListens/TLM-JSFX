@@ -1,136 +1,161 @@
-# TLM-JSFX 
-My JSFX plugins for REAPER. I am commited long term to improving these tools and creating new fx in my pursuit to make more music. 
+# TLM-JSFX
 
-repo link: https://raw.githubusercontent.com/ThomasListens/TLM-JSFX/main/index.xml
-## Retro Codec Suite
+JSFX effects and instruments for REAPER, by Thomas LeRoy Meier.
 
-Authentic emulation of retro compression formats. Add charcter to your audio with the signature sound of classic gaming hardware.
+Six plugins: a game-console codec emulator, a 12-tap delay with generated tap times, a cross modulator, a just-intonation drum synth, a saturator modelled on the inner ear, and a tap tempo readout.
 
-![Retro Codec Suite Interface](https://i.imgur.com/55v0koi.png)
+## Install
 
-### Features
-- **4 Codec Types:** N64 VADPCM, IMA ADPCM, 4-bit PCM, PSX ADPCM
-- **Period-Accurate Settings:** Sample rates (11-44kHz), bit depths (4-24 bit)
-- **Creative Controls:** Saturation, artifacts intensity, dry/wet mix, output gain
-- **Optional Filters:** Anti-aliasing pre-filter and lo-fi character filter
+**ReaPack** (recommended — you get updates)
 
-### Codec Types
+```
+https://raw.githubusercontent.com/ThomasListens/TLM-JSFX/main/index.xml
+```
 
-**N64 VADPCM** - Nintendo 64's Vector-Adaptive Differential PCM, the signature sound of Ocarina of Time and GoldenEye.
+1. Install [ReaPack](https://reapack.com/)
+2. Extensions → ReaPack → Import repositories
+3. Paste the URL above
+4. Extensions → ReaPack → Browse packages, filter by `TLM`
 
-**IMA ADPCM** - Interactive Multimedia Association standard, widely used in early CD-ROM games and multimedia.
+**Manually** — download the `.jsfx` files and drop them in your REAPER Effects folder:
 
-**4-bit PCM** - Simple 4-bit pulse code modulation with aggressive lo-fi digital artifacts.
+| OS | Path |
+|---|---|
+| Windows | `%APPDATA%\REAPER\Effects` |
+| macOS | `~/Library/Application Support/REAPER/Effects` |
+| Linux | `~/.config/REAPER/Effects` |
 
-**PSX ADPCM** - PlayStation 1's format that defined an era of gaming with Final Fantasy VII and Metal Gear Solid.
-
-### Controls
-
-- **Codec Type** - Select compression format (N64 VADPCM, IMA ADPCM, 4-bit PCM, PSX ADPCM)
-- **Sample Rate** - Choose from 11kHz, 16kHz, 22kHz, 32kHz (default), or 44kHz
-- **Bit Depth** - Select 4-bit, 8-bit, 16-bit (default), or 24-bit
-- **Saturation** - Soft saturation for subtle harmonic warmth
-- **Artifacts** - Control codec-specific compression artifacts intensity
-- **Mix** - Blend processed and dry signals (100% wet default)
-- **Output** - Master output level with ±12dB range (0dB default)
-- **Anti-Aliasing** - Pre-filter to reduce aliasing (enabled by default)
-- **Lo-Fi Filter** - Character filter matching target sample rate (enabled by default)
-
-### Usage Tips
-
-- **Double-Click** any slider to reset it to default value
-- Start with default settings (32kHz, 16-bit, N64 VADPCM) for instant retro character
-- Use the Artifacts slider to add period-authentic compression artifacts
-- Experiment with Mix control to blend vintage character with clean signal
-- Perfect for chiptune, lo-fi beats, retro game soundtracks, or experimental sound design
+Not using REAPER? JSFX can run in other DAWs — see [Joep Vanlier's guide](https://github.com/JoepVanlier/JSFX?tab=readme-ov-file#what-if-i-want-to-use-the-plugins-in-another-daw).
 
 ---
 
-## SEED_DELAY
+## Retro Codec Suite
 
-A multi-tap delay plugin featuring creative, musical, and organically-inspired algorithms to produce 12 unique delay timings.
+![Retro Codec Suite](https://i.imgur.com/55v0koi.png)
 
-![Seed Delay Interface](https://i.imgur.com/kbfxQ4Y.png)
+Emulations of the audio compression used by 1990s game consoles, built on the actual predictor and step tables from each format.
 
-### Features
-- 12-tap delay matrix with individual control over each tap
-- 8 unique timing algorithms inspired by nature, music theory, and mathematics
-- Per-tap volume and pan controls with visual envelope editing
-- Intuitive grid-based interface
+**Codecs:** N64 VADPCM · IMA ADPCM · 4-bit PCM · PSX ADPCM · Apple 1-bit
 
-### Algorithms
-- **Seed Random** - Generates unpredictable, organic delay patterns
-- **Quantum Shuffle** - Timing variations based on quantum probability concepts
-- **Perlin Noise** - Smooth, natural variations using noise algorithms
-- **Spiral Wave** - Creates spiraling, evolving delay patterns
-- **Chromatic** - Delays based on chromatic scale intervals
-- **Harmonic** - Musically-consonant delays following harmonic series
-- **Fibonacci** - Nature-inspired timing using the golden ratio
-- **L-System** - Fractal-based patterns for complex rhythms(used to model plant growth)
+| Control | Range | Default |
+|---|---|---|
+| Codec Type | 5 formats | N64 VADPCM |
+| Sample Rate | 8 kHz → project rate | ~29 kHz at a 44.1 kHz project |
+| Bit Depth | 1 → 16 bits | 11 bits |
+| Saturation | soft saturation before encoding | off |
+| Artifacts | scales the codec's own error | off |
+| Mix | dry/wet | 100% wet |
+| Output | −30 → +6 dB | 0 dB |
+| Anti-Aliasing | optional pre-filter | **off** |
+| Lo-Fi Filter | character filter matched to target rate | **off** |
 
-### Controls
-#### Grid Interface
-- **Click** any square to enable/disable individual taps
-- **[VOL & PAN]** Click to set volume/pan for specific tap
-- **[VOL & PAN]** Shift-click to enable/disable modulation
-- **[VOL & PAN]** Control-click to reset to default
-- **[VOL & PAN]** Click and drag through row to draw envelopes
+Sample Rate is a proportion of the project rate rather than a fixed value, so the default moves with your project. Apple 1-bit forces a minimum of 44.1 kHz.
+
+**Usage.** Hold `Shift` while dragging Sample Rate or Bit Depth for continuous values between the notched presets. Double-click any slider to reset it.
+
+**Worth knowing.** These codecs alias, and the downsampling has no decimation filter, because that is what the originals did. Turn on Anti-Aliasing if you want the artifacts without the aliasing.
+
+---
+
+## Seed Delay
+
+![Seed Delay](https://i.imgur.com/kbfxQ4Y.png)
+
+A 12-tap delay where the tap times are generated rather than dialled in. An algorithm proposes a set of timings; you edit the result by hand on the grid.
+
+**Algorithms.** Seed Random · Quantum Shuffle · Perlin Noise · Spiral Wave · Chromatic · Harmonic · Fibonacci · L-System
+
+**Grid**
+
+| Action | Effect |
+|---|---|
+| Click a square | Enable / disable that tap |
+| Click and drag across a row | Draw a volume or pan envelope |
+| `Shift`-click | Toggle modulation on that tap |
+| `Ctrl`-click | Reset to default |
+| REGEN | Re-roll the current algorithm |
+
+**Worth knowing.** Feedback tops out at 0.99, not 1.0 — at exactly unity the loop neither decays nor settles, and because the taps sum coherently at low frequencies it builds without bound instead of sustaining. Dirt and Moonlight/Sunlight are the non-linear stages; with both at zero the delay path is linear and rings longer at high feedback than you might expect.
+
+---
+
+## Cross Modulator
+
+Five ways for one signal to modulate another, each available with an external modulator or an internal oscillator. Modulation can be applied to the whole signal or restricted to one frequency band.
+
+**Routing — read this first.** Four inputs. Carrier on channels 1–2, modulator on channels 3–4.
+
+- The `x Osc` modes use the built-in oscillator and need no routing
+- The `x Ext` modes need a send from another track into channels 3–4
+
+If an `x Ext` mode does nothing, the send is missing. Set Modulator Source to `Main In 1-2` to modulate a signal with itself instead.
+
+| Mode | What it does |
+|---|---|
+| Ring | Classic ring modulation, carrier suppressed |
+| AM | Carrier stays present alongside the sidebands |
+| Phase FM | Modulator displaces a short delay line |
+| Envelope | A follower on the modulator gates the band — rhythm without pitch artifacts. Slow oscillator gives tremolo |
+| Filter FM | Audio-rate modulation of the band filter cutoff |
+
+Controls: Intensity · Osc Rate (20 Hz–5 kHz) · Max FM Depth · Modulated Band (LP/BP/HP/full) · Band Freq · Band Q · Output Trim
+
+**Worth knowing.** Ring and FM produce inharmonic sidebands by design. Output level varies a lot between modes — use Output Trim.
+
+---
+
+## MonoDrum
+
+A monophonic percussion synth whose partials are placed by whole-number frequency ratios rather than by an inharmonicity control. MIDI in, no audio in — put it on an empty track.
+
+Real drums have inharmonic partials. Placing them at just ratios instead gives something that reads as pitched percussion. That is the point, not a limitation.
+
+**Sources.** Tuned partials with per-partial ratio, level and decay · a noise channel with its own envelope and bandpass · a short click transient.
+
+**Structure presets.** Several presets are tunings rather than timbres — the tuning *is* the patch. Spiral of Fifths is twelve Pythagorean steps. Euler Genus 105 is the divisor lattice of 3×5×7, octave-reduced. Otonal Nine is harmonics 8–16 as a chord.
+
+**Usage.** Pitch follows MIDI note, or set Mode to `Hz Override` for a fixed frequency. Trigger Mode switches between `Gate` (holds while held) and `One-Shot` (always plays the full envelope). Velocity can be routed to decay and to pitch envelope depth. Auto-Normalize Partials keeps level roughly constant as you add partials — turn it off if you want adding partials to get louder.
+
+---
+
+## Cochlear Stereocilia Distortion
+
+A saturation curve taken from the inner ear rather than from a circuit.
+
+The Boltzmann function used here describes how far a hair bundle has to bend before its ion channels open. The curve is asymmetric and level-dependent, so it behaves differently on transients than on sustained material. Based on the model in Peterson & Heil, 2020.
+
+Controls: Input Gain · Drive · Asymmetry · Output Trim · Wet/Dry
+
+Asymmetry biases the two directions of the curve, which sets how much even-order content is produced.
+
+**Worth knowing.** Not oversampled. High Drive on bright material will alias. Use it on the way in or on a duplicated track rather than across a full mix.
 
 ---
 
 ## Tap Timing Utility
 
-A timing measurement plugin for REAPER that helps you set delays and time-based effects "by hand" using your mouse or keyboard
+![Tap Timing Utility](https://i.imgur.com/xSkC0bt.png)
 
-![Tap Timing Utility Interface](https://i.imgur.com/xSkC0bt.png)
+Tap along with something and read the interval back in the units other plugins ask for — for when you know how a delay should feel but not what number it is.
 
-### Features
-- Measures intervals between clicks with millisecond accuracy
-- Real-time conversion to Hz, ms, and samples at current sample rate
-- Tempo-aware beat division calculations
-- Audio click feedback for rhythmic accuracy
-- History tracking of recent measurements
+Reads out milliseconds, hertz, samples at the current project rate, and the nearest beat division against project tempo.
 
-### Use Cases
-- Setting delay times by tapping along with music
-- Finding the tempo of audio material
-- Calculating LFO rates and modulation speeds
-- Measuring rhythmic intervals for precise timing
+**Usage.** Choose Mouse or MIDI input, then tap the button or play notes. The running average steadies over several taps, so keep tapping rather than trying to land two perfect ones. Audio Click gives you something to tap against.
 
-### Usage
-1. Click the main button to mark timing points
-2. View instant conversion to useful time formats
-3. Use measurements to dial in perfect delay times
+Measurement only — it does not process audio and can sit anywhere in a chain.
 
 ---
 
-## Installation
+## Also in this repo
 
-### Via ReaPack (Recommended)
-1. Install [ReaPack](https://reapack.com/) if you haven't already
-2. In REAPER: Extensions → ReaPack → Manage repositories
-3. Click "Import repositories..."
-4. Add this repository URL: `https://raw.githubusercontent.com/ThomasListens/TLM-JSFX/main/index.xml`
-5. Click OK, then close the Manage repositories window
-6. Extensions → ReaPack → Synchronize packages
-7. Extensions → ReaPack → Browse packages
-8. Search for "TLM-JSFX" and install the plugins you want
-
-### Manual Installation
-1. Download the .jsfx files from this repository
-2. Place them in your REAPER Effects folder:
-   - Windows: `%APPDATA%\REAPER\Effects`
-   - macOS: `~/Library/Application Support/REAPER/Effects`
-   - Linux: `~/.config/REAPER/Effects`
-3. Restart REAPER or scan for new plugins
-
-### Using JSFX in Other DAWs
-Not using REAPER? You can still use JSFX plugins! Check out [this guide for running JSFX in other DAWs](https://github.com/JoepVanlier/JSFX?tab=readme-ov-file#what-if-i-want-to-use-the-plugins-in-another-daw).
-
----
+`Video Processors/` holds a few REAPER video processor presets — BOXCROP, Gentle Breathing & Blur, Progressive Word Display. These are **not** distributed through ReaPack; copy the text into a video processor instance directly.
 
 ## License
-These plugins are provided as-is for creative use.
+
+Provided as-is for creative use.
 
 ## Credits
-Created by Thomas Meier with AI assistance from Claude.
+
+Written by Thomas Meier with AI assistance from Claude. Seed Delay and Tap Timing Utility carry a joint author tag for that reason.
+
+Approach to memory layout, filter topology and packaging is indebted to reading the published work of [Joep Vanlier (Saike)](https://github.com/JoepVanlier/JSFX), [Geraint Luff](https://github.com/geraintluff/jsfx) and [chokehold](https://github.com/chkhld/jsfx).
