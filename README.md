@@ -4,7 +4,11 @@ JSFX effects and instruments for REAPER, by Thomas LeRoy Meier.
 
 Six plugins: a game-console codec emulator, a 12-tap delay with generated tap times, a cross modulator, a just-intonation drum synth, a saturator modelled on the inner ear, and a tap tempo readout.
 
-**Three of them are not in ReaPack yet.** Cross Modulator, MonoDrum and Cat Ears are in this repository and documented below, but they are not being distributed for install until they have been properly tested. Download them by hand if you want to try them early.
+> **This README describes the code in this repository, which is ahead of what ReaPack currently installs.**
+>
+> Cross Modulator, MonoDrum and Cat Ears are not in ReaPack at all yet. Retro Codec Suite, Seed Delay and Tap Timing Utility are, but ReaPack is deliberately serving the previous release (8.3 / 7.2 / 2.1) while the current versions are tested. Nothing goes out until it has been heard.
+>
+> Clone or download the files directly if you want the current code.
 
 ## Install
 

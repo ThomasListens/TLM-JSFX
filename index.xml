@@ -55,14 +55,6 @@
 <source>https://raw.githubusercontent.com/ThomasListens/TLM-JSFX/69299388d2147843b259581c81aa4465ad113458/RetroCodecSuite.jsfx</source>
 <changelog><![CDATA[Interface and control refinements.]]></changelog>
 </version>
-<version name="8.4" author="Thomas LeRoy Meier" time="2026-08-01T03:41:30Z">
-<source>https://raw.githubusercontent.com/ThomasListens/TLM-JSFX/4015acbe6e93567a8fd328a4581a6635bf206628/RetroCodecSuite.jsfx</source>
-<changelog><![CDATA[Two long-standing bugs, both present since the first release.
-
-The IMA ADPCM codec never worked. Its index table shared a base address with the sample rate table, so changing any parameter overwrote part of it and pinned the decoder at its maximum step size. IMA has been producing permanent maximum-step distortion rather than IMA compression. It now decodes correctly, so this codec will sound substantially different - and correct - for the first time.
-
-The filter and predictor states were initialised to their own array indices instead of zero, so the lo-fi filter started with a large impulse and the PSX feedback path started railed. These were only cleared when transport started, so a live-monitored or record-armed track never cleared them at all. All state is now zeroed when the effect loads.]]></changelog>
-</version>
 </reapack>
 
 <reapack name="Seed Delay (TLM)" type="effect" desc="12-tap delay with algorithmic tap timing">
@@ -89,8 +81,8 @@ The filter and predictor states were initialised to their own array indices inst
 {\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Ctrl-click to reset a control\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab REGEN re-rolls the current algorithm\sa180\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 \b \fs28 Notes\par}
-{\pard \ql \f0 \sa180 \li0 \fi0 Feedback tops out at 0.99 rather than 1.0. At exactly unity the loop neither decays nor settles, and because the taps sum coherently at low frequencies it grows without bound instead of sustaining.\par}
-{\pard \ql \f0 \sa180 \li0 \fi0 Dirt and Moonlight/Sunlight are non-linear. With both at zero the delay path is linear and will ring longer at high feedback than you might expect.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Dirt and Moonlight/Sunlight are the non-linear stages. With both at zero the delay path is linear and rings longer at high feedback than you might expect.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Known issue in this version: with Feedback at maximum, Dirt and Moonlight/Sunlight both at zero, and many taps active, the delay can build until it produces silence and stays silent until the effect is reloaded. Back the feedback off, or add a little Dirt, and it will not happen. A fix is written and waiting on testing.\par}
 }]]>
 </description>
 <link rel="screenshot">https://i.imgur.com/kbfxQ4Y.png</link>
@@ -106,22 +98,6 @@ The filter and predictor states were initialised to their own array indices inst
 <version name="7.2" author="Thomas LeRoy Meier" time="2025-08-31T23:12:41Z">
 <source>https://raw.githubusercontent.com/ThomasListens/TLM-JSFX/6a45ccc1d315d630be92abf91870ea5ad7ad5ec1/SeedDelay.jsfx</source>
 <changelog><![CDATA[Feedback range and tap scaling refinements.]]></changelog>
-</version>
-<version name="7.3" author="Thomas LeRoy Meier" time="2026-08-01T03:41:42Z">
-<source>https://raw.githubusercontent.com/ThomasListens/TLM-JSFX/8423d4d39540791c3ff3daec853c7eb1c765b5cd/SeedDelay.jsfx</source>
-<changelog><![CDATA[The high-frequency damping in the feedback path never ran. Its filter state was being reset every single sample, which reduced the filter to a flat gain. Earlier release notes for this plugin claimed the damping fixed squealing at high feedback; that was not true, and is true now.
-
-The output limiter ran after the delay buffer was written, so it protected the output but never the feedback loop. At high feedback with Dirt and Moonlight/Sunlight at zero the buffer could overflow to infinity, after which any tap set to zero volume produced NaN, which then spread through the buffer and silenced the plugin until it was reloaded. The loop is now bounded before the write, with a soft knee only above the limit, so normal levels are unchanged.
-
-The Algorithm, Timing and Invert parameters are now range-checked. Out-of-range automation could read outside the algorithm table and be used as delay times.
-
-Saved plugin state is now checked when a project loads. The state format is unchanged, so existing projects load exactly as before.]]></changelog>
-</version>
-<version name="7.4" author="Thomas LeRoy Meier" time="2026-08-01T03:43:06Z">
-<source>https://raw.githubusercontent.com/ThomasListens/TLM-JSFX/4015acbe6e93567a8fd328a4581a6635bf206628/SeedDelay.jsfx</source>
-<changelog><![CDATA[Feedback now tops out at 0.99 instead of 1.0. Exactly unity feedback is the condition that made the buildup in 7.3 possible. The 60%, 80% and 90% character thresholds are all still reachable, so the sound at high feedback is unchanged.
-
-A project saved with feedback at 1.0 will load at 0.99.]]></changelog>
 </version>
 </reapack>
 
@@ -151,10 +127,6 @@ A project saved with feedback at 1.0 will load at 0.99.]]></changelog>
 <version name="2.1" author="Thomas LeRoy Meier" time="2025-08-28T23:47:20Z">
 <source>https://raw.githubusercontent.com/ThomasListens/TLM-JSFX/9d5abce7bdeac3f8d0db41186afcc0808fe1f1c6/TapTimingUtility.jsfx</source>
 <changelog><![CDATA[First public version.]]></changelog>
-</version>
-<version name="2.2" author="Thomas LeRoy Meier" time="2026-08-01T03:43:14Z">
-<source>https://raw.githubusercontent.com/ThomasListens/TLM-JSFX/4015acbe6e93567a8fd328a4581a6635bf206628/TapTimingUtility.jsfx</source>
-<changelog><![CDATA[Removed a packaging declaration that referred to a file which was never part of the repository. No change to the plugin itself.]]></changelog>
 </version>
 </reapack>
 
